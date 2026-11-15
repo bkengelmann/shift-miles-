@@ -47,8 +47,8 @@ p{margin:0}
 a{color:inherit}
 #status{font-size:13px;color:var(--muted)}
 #status::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);margin-right:6px}
-#status[data-s="cloud"]::before{background:var(--good)}
-#status[data-s="local"]::before{background:var(--accent)}
+#status[data-s="ok"]::before{background:var(--good)}
+#status[data-s="bad"]::before{background:var(--danger)}
 nav{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--line)}
 nav button{font:600 17px/1 var(--display);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:none;border:0;border-bottom:3px solid transparent;padding:12px 4px;cursor:pointer}
 nav button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
@@ -57,6 +57,7 @@ main{display:flex;flex-direction:column;gap:16px}
 .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
 .between{justify-content:space-between}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.stack{display:flex;flex-direction:column;gap:8px}
 label{display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:500;color:var(--muted)}
 label.check{flex-direction:row;align-items:center;gap:10px;color:var(--ink);font-weight:400;font-size:15px}
 input,select{font:500 16px/1.2 var(--body);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:11px 12px;width:100%;min-width:0;font-variant-numeric:tabular-nums}
@@ -67,9 +68,10 @@ input.big{font:600 28px/1 var(--display);letter-spacing:.04em;padding:12px}
 .btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
 .btn.small{font-size:15px;padding:9px 12px}
 .btn.danger{background:var(--danger);border-color:var(--danger);color:#fff}
-.link{background:none;border:0;padding:4px 0;color:var(--muted);font:500 14px var(--body);text-decoration:underline;cursor:pointer}
+.link{background:none;border:0;padding:4px 0;color:var(--muted);font:500 14px var(--body);text-decoration:underline;cursor:pointer;text-align:left}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
 .chip{display:inline-flex;align-items:center;gap:8px;font:500 15px var(--body);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:8px 14px;cursor:pointer}
+.chip.mini{font-size:13px;padding:5px 10px}
 .chip i{width:10px;height:10px;border-radius:50%;flex:none}
 .chip[aria-pressed="true"]{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink);font-weight:600}
 .odo{display:inline-flex;gap:3px;background:var(--odo);padding:8px;border-radius:8px;align-self:flex-start}
@@ -80,9 +82,10 @@ input.big{font:600 28px/1 var(--display);letter-spacing:.04em;padding:12px}
 .fig span{font-size:13px;color:var(--muted)}
 .live{font:600 20px var(--display);letter-spacing:.03em}
 .err{color:var(--danger);font-size:14px;font-weight:500}
-.err:empty{display:none}
-.note{font-size:14px;color:var(--muted);max-width:60ch}
+.err:empty,.note:empty{display:none}
+.note{font-size:14px;color:var(--muted);max-width:60ch;overflow-wrap:anywhere}
 .warn{font-size:14px;border-left:3px solid var(--accent);padding:2px 0 2px 12px;max-width:60ch}
+.flag{font-size:14px;color:var(--danger);font-weight:500}
 .empty{color:var(--muted);padding:8px 0}
 ul{list-style:none;margin:0;padding:0}
 .month{display:flex;justify-content:space-between;align-items:baseline;padding:14px 0 6px;border-bottom:1px solid var(--line)}
@@ -99,9 +102,12 @@ ul{list-style:none;margin:0;padding:0}
 .svc .bar{grid-column:1/-1;height:8px;background:var(--bg);border-radius:4px;overflow:hidden}
 .svc .bar i{display:block;height:100%;border-radius:4px}
 .svc .sub{grid-column:1/-1;font-size:14px;color:var(--muted)}
-.kv{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line);font-size:15px}
+.kv{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--line);font-size:15px}
 .kv:last-child{border-bottom:0}
+.kv.total{font-weight:600}
 .hide{display:none!important}
+.place{display:flex;flex-direction:column;gap:10px;padding:14px 0;border-bottom:1px solid var(--line)}
+.place:first-child{padding-top:0}
 @media (max-width:380px){.odo span{font-size:28px;min-width:23px;padding:6px 5px}.figs{grid-template-columns:1fr 1fr}}
 @media (prefers-reduced-motion:no-preference){.btn,.chip{transition:opacity .12s}.btn:active,.chip:active{opacity:.7}}
 </style>
@@ -110,7 +116,7 @@ ul{list-style:none;margin:0;padding:0}
 <div class="wrap">
   <header>
     <h1>Shift Miles</h1>
-    <span id="status" data-s="cloud">Saved on this phone</span>
+    <span id="status" data-s="ok">Saved on this phone</span>
   </header>
   <nav role="tablist" aria-label="Sections">
     <button role="tab" data-tab="shift" aria-selected="true">Shift</button>
@@ -132,53 +138,132 @@ const pad = n => String(n).padStart(2, "0");
 const localDate = (d = new Date()) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
 const hhmm = (d = new Date()) => pad(d.getHours()) + ":" + pad(d.getMinutes());
 const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-const fmtMi = n => (Math.round(n * 10) / 10).toLocaleString("en-US", {minimumFractionDigits:1, maximumFractionDigits:1});
+const fmtMi = n => r1(n).toLocaleString("en-US", {minimumFractionDigits:1, maximumFractionDigits:1});
 const fmtUsd = n => n.toLocaleString("en-US", {style:"currency", currency:"USD"});
 const fmtDay = iso => new Date(iso + "T12:00:00").toLocaleDateString("en-US", {weekday:"short", month:"short", day:"numeric"});
 const fmtMonth = ym => new Date(ym + "-15T12:00:00").toLocaleDateString("en-US", {month:"long", year:"numeric"});
 const fmtTime = t => { if (!t) return ""; const [h, m] = t.split(":").map(Number); return ((h % 12) || 12) + ":" + pad(m) + (h < 12 ? " AM" : " PM"); };
-const numVal = sel => { const el = $(sel); if (!el || el.value.trim() === "") return NaN; return parseFloat(el.value); };
+const val = sel => { const el = $(sel); return el && typeof el.value === "string" ? el.value.trim() : ""; };
+const numVal = sel => { const v = val(sel); return v === "" ? NaN : parseFloat(v); };
+const optNum = (sel, errSel, what) => { const v = val(sel); if (v === "") return 0; const n = parseFloat(v); if (!(n >= 0)){ setErr(errSel, "Enter " + what + " as a number, or leave it blank."); return null; } return n; };
+const sortKey = s => s.date + (s.t0 || "") + s.id;
 
 /* ---------- IRS standard mileage rates, by trip date ---------- */
 const RATES = [["2024-01-01", 0.67], ["2025-01-01", 0.70], ["2026-01-01", 0.725], ["2026-07-01", 0.76]];
 const LAST_RATE_YEAR = 2026;
 function rateFor(date){ let r = RATES[0][1]; for (const [from, v] of RATES) if (date >= from) r = v; return r; }
 const fmtRate = r => (r * 100).toFixed(1).replace(/\.0$/, "") + "¢";
+/* IRS estimated-tax payment periods, which are not even calendar quarters. */
+const PERIODS = [["Jan 1 to Mar 31", "payment due Apr 15"], ["Apr 1 to May 31", "payment due Jun 15"], ["Jun 1 to Aug 31", "payment due Sep 15"], ["Sep 1 to Dec 31", "payment due Jan 15"]];
+const periodOf = date => { const m = Number(date.slice(5, 7)); return m <= 3 ? 0 : m <= 5 ? 1 : m <= 8 ? 2 : 3; };
 
 /* ---------- state ---------- */
 const COLORS = ["#3b82c4", "#d9822b", "#4a9d6e", "#a25bb8", "#c9504a", "#7a8794"];
 const DEFAULT_SERVICES = ["DoorDash", "Spark", "Uber Eats", "Instacart", "Grubhub"].map((n, i) => ({id: "s" + (i + 1), name: n}));
-function blankMeta(){ return {v:1, services: clone(DEFAULT_SERVICES), active:null, home:{on:false, miles:0}, years:{}, logYears:[], lastOdo:null, gps:true, lastBackup:null}; }
+function blankMeta(){
+  return {v:2, services: clone(DEFAULT_SERVICES), vehicles:[{id:"v1", name:"My vehicle"}], vehicle:"v1", active:null,
+    commute:"off", homePlace:null, places:[], years:{}, logYears:[], lastOdo:{}, gps:true, lastBackup:null};
+}
 function fixMeta(m){
   const b = blankMeta(); m = m && typeof m === "object" ? m : {};
-  return {v:1,
+  const vehicles = Array.isArray(m.vehicles) && m.vehicles.length ? m.vehicles : b.vehicles, v0 = vehicles[0].id;
+  const years = {};
+  for (const [k, v] of Object.entries(m.years && typeof m.years === "object" ? m.years : {})){
+    if (!v || typeof v !== "object") continue;
+    years[k] = (typeof v.o0 === "number" || typeof v.o1 === "number") ? {[v0]: {o0: v.o0, o1: v.o1}} : v;
+  }
+  const live = vehicles.filter(x => !x.gone);
+  return {v:2,
     services: Array.isArray(m.services) && m.services.length ? m.services : b.services,
+    vehicles, vehicle: live.some(x => x.id === m.vehicle) ? m.vehicle : (live[0] || vehicles[0]).id,
     active: m.active || null,
-    home: {on: !!(m.home && m.home.on), miles: Number(m.home && m.home.miles) || 0},
-    years: m.years && typeof m.years === "object" ? m.years : {},
-    logYears: Array.isArray(m.logYears) ? m.logYears : [],
-    lastOdo: typeof m.lastOdo === "number" ? m.lastOdo : null,
+    commute: m.commute === "add" || m.commute === "sub" ? m.commute : (m.home && m.home.on ? "add" : "off"),
+    homePlace: m.homePlace && typeof m.homePlace.lat === "number" ? m.homePlace : null,
+    places: Array.isArray(m.places) ? m.places : [],
+    years, logYears: Array.isArray(m.logYears) ? m.logYears : [],
+    lastOdo: typeof m.lastOdo === "number" ? {[v0]: m.lastOdo} : (m.lastOdo && typeof m.lastOdo === "object" ? m.lastOdo : {}),
     gps: m.gps !== false, lastBackup: m.lastBackup || null};
 }
 let S = {meta: blankMeta(), shifts: []};
-const ui = {tab:"shift", year:String(new Date().getFullYear()), form:null, confirm:null, discard:false, restore:null};
+const ui = {tab:"shift", year:String(new Date().getFullYear()), veh:null, form:null, confirm:null, discard:false, restore:null, gapOk:null, note:{}};
 
-const tot = s => (s.miles || 0) + (s.homeMiles || 0);
+const homeSigned = s => (s.homeMode === "sub" ? -1 : 1) * (s.homeMiles || 0);
+const tot = s => Math.max(0, (s.miles || 0) + homeSigned(s));
 const svcName = id => (S.meta.services.find(s => s.id === id) || {name:"Removed service"}).name;
 const svcColor = id => { const i = S.meta.services.findIndex(s => s.id === id); return COLORS[(i < 0 ? 5 : i) % COLORS.length]; };
+const vehOf = s => s.veh || S.meta.vehicles[0].id;
+const vehName = id => (S.meta.vehicles.find(v => v.id === id) || {name:"Removed vehicle"}).name;
+const liveVehicles = () => S.meta.vehicles.filter(v => !v.gone);
+const manyVehicles = () => liveVehicles().length > 1;
+
 function totals(y){
   const list = S.shifts.filter(s => s.date.startsWith(y + "-"));
-  let mi = 0, ded = 0, earn = 0; const by = {}, rates = {};
+  let mi = 0, ded = 0, earn = 0, fees = 0; const by = {}, rates = {}, byVeh = {};
+  const periods = PERIODS.map(() => ({mi:0, ded:0, earn:0, fees:0}));
   for (const s of list){
-    const t = tot(s), r = rateFor(s.date), n = s.services.length || 1;
-    mi += t; ded += t * r; earn += s.earn || 0;
+    const t = tot(s), r = rateFor(s.date), n = s.services.length || 1, p = periods[periodOf(s.date)];
+    mi += t; ded += t * r; earn += s.earn || 0; fees += s.fees || 0;
+    p.mi += t; p.ded += t * r; p.earn += s.earn || 0; p.fees += s.fees || 0;
     rates[r] = (rates[r] || 0) + t;
+    byVeh[vehOf(s)] = (byVeh[vehOf(s)] || 0) + t;
     for (const id of s.services){
       const b = (by[id] = by[id] || {mi:0, ded:0, earn:0, n:0});
       b.mi += t / n; b.ded += t * r / n; b.earn += (s.earn || 0) / n; b.n++;
     }
   }
-  return {list, mi, ded, earn, by, rates};
+  return {list, mi, ded, earn, fees, by, rates, byVeh, periods};
+}
+/* Odometer gap for each shift against the previous shift on the same vehicle. */
+function gaps(){
+  const out = {}, prev = {};
+  [...S.shifts].sort((a, b) => sortKey(a).localeCompare(sortKey(b))).forEach(s => {
+    if (s.odo0 == null) return;
+    const v = vehOf(s);
+    if (prev[v] != null) out[s.id] = r1(s.odo0 - prev[v]);
+    prev[v] = s.odo1;
+  });
+  return out;
+}
+
+/* ---------- places and home miles ---------- */
+const placeByName = n => { n = String(n || "").trim().toLowerCase(); return n ? S.meta.places.find(p => p.name.trim().toLowerCase() === n) : undefined; };
+function metersBetween(a, b){
+  const R = 6371000, k = Math.PI / 180, dLat = (b.lat - a.lat) * k, dLon = (b.lon - a.lon) * k;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * k) * Math.cos(b.lat * k) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+function nearestPlace(loc){
+  let best = null, bd = 150;
+  for (const p of S.meta.places){ if (typeof p.lat !== "number") continue; const d = metersBetween(loc, p); if (d <= bd){ bd = d; best = p; } }
+  return best;
+}
+/* One-way miles from home for the start place plus one-way for the end place. */
+function commuteFor(p0, p1){
+  const a = placeByName(p0), b = placeByName(p1);
+  return r1((a && a.homeMi > 0 ? a.homeMi : 0) + (b && b.homeMi > 0 ? b.homeMi : 0));
+}
+async function geocode(q){
+  const r = await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=us&q=" + encodeURIComponent(q));
+  if (!r.ok) throw new Error("lookup");
+  const j = await r.json();
+  if (!j.length) throw new Error("notfound");
+  return {lat: +(+j[0].lat).toFixed(5), lon: +(+j[0].lon).toFixed(5), label: j[0].display_name};
+}
+async function routeMiles(a, b){
+  const r = await fetch("https://router.project-osrm.org/route/v1/driving/" + a.lon + "," + a.lat + ";" + b.lon + "," + b.lat + "?overview=false");
+  if (!r.ok) throw new Error("route");
+  const j = await r.json();
+  if (j.code !== "Ok" || !j.routes || !j.routes.length) throw new Error("route");
+  return r1(j.routes[0].distance / 1609.344);
+}
+const getFix = () => new Promise((res, rej) => {
+  if (!navigator.geolocation) return rej(new Error("nogps"));
+  navigator.geolocation.getCurrentPosition(p => res({lat: +p.coords.latitude.toFixed(5), lon: +p.coords.longitude.toFixed(5)}), rej, {enableHighAccuracy:true, timeout:15000, maximumAge:30000});
+});
+async function routePlace(p){
+  if (!S.meta.homePlace || typeof p.lat !== "number") return false;
+  p.homeMi = await routeMiles(S.meta.homePlace, p);
+  return true;
 }
 
 /* ---------- storage: this phone only ---------- */
@@ -195,7 +280,7 @@ function commit(){
 }
 function paintStatus(){
   const el = $("#status");
-  el.dataset.s = saveOk ? "cloud" : "local";
+  el.dataset.s = saveOk ? "ok" : "bad";
   el.textContent = saveOk ? "Saved on this phone" : "Could not save. Turn off private browsing";
 }
 /* Hand a file to the share sheet (Save to Files, Notes, Mail); fall back to a plain download. */
@@ -205,43 +290,50 @@ async function saveFile(name, text, type){
   const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = name;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000);
 }
-/* Ask the phone for one GPS fix; never blocks the shift. */
+/* Ask the phone for one GPS fix after a shift starts or ends; never blocks the shift. */
 function stampLocation(apply){
-  if (!S.meta.gps || !navigator.geolocation) return;
-  navigator.geolocation.getCurrentPosition(p => {
-    apply({lat: +p.coords.latitude.toFixed(5), lon: +p.coords.longitude.toFixed(5), acc: Math.round(p.coords.accuracy)});
-    commit();
+  if (!S.meta.gps) return;
+  getFix().then(loc => {
+    apply(loc); commit();
     const ae = document.activeElement;
     if (!ui.form && ui.tab !== "setup" && !(ae && ae.matches && ae.matches("input,select"))) render();
-  }, () => {}, {enableHighAccuracy:true, timeout:15000, maximumAge:30000});
+  }).catch(() => {});
 }
+
+/* ---------- view pieces ---------- */
 const locLink = l => '<a href="https://maps.apple.com/?q=' + l.lat + "," + l.lon + '">' + l.lat + ", " + l.lon + "</a>";
+function chips(sel){
+  return '<div class="chips" role="group" aria-label="Which service">' + S.meta.services.filter(s => !s.gone || sel.includes(s.id)).map(s =>
+    '<button type="button" class="chip" data-act="chip" data-id="' + s.id + '" aria-pressed="' + sel.includes(s.id) + '"><i style="background:' + svcColor(s.id) + '"></i>' + esc(s.name) + "</button>").join("") + "</div>";
+}
+const readChips = root => [...root.querySelectorAll('.chip[aria-pressed="true"]')].map(b => b.dataset.id);
+function placeField(id, label, value, placeholder){
+  const picks = S.meta.places.map(p => '<button type="button" class="chip mini" data-act="pick-place" data-target="' + id + '" data-name="' + esc(p.name) + '">' + esc(p.name) + "</button>").join("");
+  return '<div class="stack"><label for="' + id + '">' + label + '<input id="' + id + '" list="places" autocomplete="off" value="' + esc(value || "") + '" placeholder="' + esc(placeholder || "") + '"></label>' +
+    (picks ? '<div class="chips" role="group" aria-label="Saved places">' + picks + "</div>" : "") + "</div>";
+}
+function vehSelect(id, cur){
+  const list = S.meta.vehicles.filter(v => !v.gone || v.id === cur);
+  return '<label for="' + id + '">Vehicle<select id="' + id + '">' + list.map(v => '<option value="' + v.id + '"' + (v.id === cur ? " selected" : "") + ">" + esc(v.name) + "</option>").join("") + "</select></label>";
+}
+function odoPlate(n){
+  const t = Math.round(n * 10), whole = String(Math.floor(t / 10)).padStart(6, "0");
+  return '<div class="odo" role="img" aria-label="Odometer ' + n.toFixed(1) + '">' + [...whole].map(d => "<span>" + d + "</span>").join("") + '<span class="tenth">' + (t % 10) + "</span></div>";
+}
 function placeLine(s){
   const one = (label, place, loc) => place || loc ? label + " " + [place ? esc(place) : "", loc ? locLink(loc) : ""].filter(Boolean).join(", ") : "";
   const parts = [one("From", s.place0, s.loc0), one("To", s.place1, s.loc1)].filter(Boolean);
   return parts.length ? '<div class="sub">' + parts.join(" · ") + "</div>" : "";
 }
-/* Places typed before, offered as suggestions in every location field. */
 function placesList(){
-  const seen = [...new Set(S.shifts.flatMap(s => [s.place0, s.place1]).filter(Boolean))].slice(-40);
-  return '<datalist id="places">' + seen.map(p => '<option value="' + esc(p) + '"></option>').join("") + "</datalist>";
+  const names = [...new Set([...S.meta.places.map(p => p.name), ...S.shifts.flatMap(s => [s.place0, s.place1])].filter(Boolean))].slice(-60);
+  return '<datalist id="places">' + names.map(p => '<option value="' + esc(p) + '"></option>').join("") + "</datalist>";
 }
 function backupNudge(){
   if (!S.shifts.length) return "";
   const last = S.meta.lastBackup, days = last ? Math.round((new Date(localDate() + "T12:00:00") - new Date(last + "T12:00:00")) / 864e5) : null;
   if (days !== null && days < 30) return "";
   return '<p class="warn">' + (last ? "Your last backup was " + days + " days ago." : "This log has never been backed up.") + " It exists only on this phone. Save a backup file on the Setup tab.</p>";
-}
-
-/* ---------- view pieces ---------- */
-function chips(sel){
-  return '<div class="chips" role="group" aria-label="Which service">' + S.meta.services.filter(s => !s.gone || sel.includes(s.id)).map(s =>
-    '<button type="button" class="chip" data-act="chip" data-id="' + s.id + '" aria-pressed="' + sel.includes(s.id) + '"><i style="background:' + svcColor(s.id) + '"></i>' + esc(s.name) + "</button>").join("") + "</div>";
-}
-const readChips = root => [...root.querySelectorAll('.chip[aria-pressed="true"]')].map(b => b.dataset.id);
-function odoPlate(n){
-  const t = Math.round(n * 10), whole = String(Math.floor(t / 10)).padStart(6, "0");
-  return '<div class="odo" role="img" aria-label="Odometer ' + n.toFixed(1) + '">' + [...whole].map(d => "<span>" + d + "</span>").join("") + '<span class="tenth">' + (t % 10) + "</span></div>";
 }
 function yearStrip(){
   const y = String(new Date().getFullYear()), t = totals(y);
@@ -250,21 +342,26 @@ function yearStrip(){
     '<div class="fig"><b>' + fmtUsd(t.ded) + '</b><span>mileage deduction</span></div>' +
     '<div class="fig"><b>' + t.list.length + '</b><span>shifts logged</span></div></div></section>';
 }
+const homeWord = () => S.meta.commute === "sub" ? "Subtract home miles from this shift" : "Add home miles to this shift";
+const msg = k => '<p class="note" id="' + k + '-msg" role="status">' + esc(ui.note[k] || "") + "</p>";
 
 function viewShift(){
-  const a = S.meta.active, h = S.meta.home;
+  const a = S.meta.active, m = S.meta;
   let html = "";
   if (a){
-    const started = new Date(a.start);
-    html += '<form class="card" id="end-form" novalidate><h2>Shift in progress</h2>' + odoPlate(a.odo) +
+    const started = new Date(a.start), hours = (Date.now() - a.start) / 36e5;
+    html += '<form class="card" id="end-form" novalidate><h2>Shift in progress</h2>' +
+      (hours > 12 ? '<p class="warn">This shift has been open for ' + Math.round(hours) + " hours. If you forgot to end it, enter the reading from when you stopped, or discard it and add the shift by hand.</p>" : "") +
+      odoPlate(a.odo) +
       '<p class="note">Started ' + fmtDay(localDate(started)) + " at " + fmtTime(hhmm(started)) + " for " + esc(a.services.map(svcName).join(" + ")) +
-      (a.home ? ". Home miles will be added" : "") + '.</p>' +
+      (manyVehicles() ? " in " + esc(vehName(a.veh)) : "") + ".</p>" +
       (a.place0 || a.loc0 ? '<p class="note">Started from ' + [a.place0 ? esc(a.place0) : "", a.loc0 ? locLink(a.loc0) : ""].filter(Boolean).join(", ") + "</p>" : "") +
       '<label for="end-odo">Odometer now<input class="big" id="end-odo" inputmode="decimal" autocomplete="off" placeholder="' + a.odo + '"></label>' +
       '<p class="live" id="live-miles">Enter the reading to see miles driven</p>' +
-      '<label for="end-place">Ending at, optional<input id="end-place" list="places" autocomplete="off" placeholder="Home, or last drop-off"></label>' +
+      placeField("end-place", "Ending at, optional", "", "Last stop") +
       '<div class="grid2"><label for="end-earn">Earnings, optional<input id="end-earn" inputmode="decimal" autocomplete="off" placeholder="$"></label>' +
-      '<label for="end-note">Note, optional<input id="end-note" autocomplete="off" placeholder="Zone, weather"></label></div>' +
+      '<label for="end-fees">Tolls and parking, optional<input id="end-fees" inputmode="decimal" autocomplete="off" placeholder="$"></label></div>' +
+      '<label for="end-note">Note, optional<input id="end-note" autocomplete="off" placeholder="Zone, weather"></label>' +
       '<p class="err" id="end-err" role="alert"></p>' +
       '<button class="btn" type="submit">End shift and log it</button>' +
       (ui.discard
@@ -272,12 +369,13 @@ function viewShift(){
         : '<button type="button" class="link" data-act="discard">Discard this shift</button>') +
       "</form>";
   } else {
-    const last = S.shifts.length ? [...S.shifts].sort((x, y) => (x.date + (x.t0 || "")).localeCompare(y.date + (y.t0 || ""))).pop().services : [];
+    const last = S.shifts.length ? [...S.shifts].sort((x, y) => sortKey(x).localeCompare(sortKey(y))).pop().services : [];
     html += '<form class="card" id="start-form" novalidate><h2>Start a shift</h2>' +
       '<div><h3 style="margin-bottom:8px">Driving for</h3>' + chips(last) + '<p class="note" style="margin-top:8px">Pick two if you are running both at once. Miles are split evenly between them.</p></div>' +
-      '<label for="start-odo">Odometer at start<input class="big" id="start-odo" inputmode="decimal" autocomplete="off" value="' + (S.meta.lastOdo ?? "") + '" placeholder="48210.4"></label>' +
-      '<label for="start-place">Starting from, optional<input id="start-place" list="places" autocomplete="off" placeholder="Walmart on Louise Ave"></label>' +
-      (h.on ? '<label class="check" for="start-home"><input type="checkbox" id="start-home" checked>Add ' + fmtMi(h.miles) + ' home miles to this shift</label>' : "") +
+      (manyVehicles() ? vehSelect("start-veh", m.vehicle) : "") +
+      '<label for="start-odo">Odometer at start<input class="big" id="start-odo" inputmode="decimal" autocomplete="off" value="' + (m.lastOdo[m.vehicle] ?? "") + '" placeholder="48210.4"></label>' +
+      placeField("start-place", "Starting from, optional", "", "Pick a saved place or type one") +
+      (m.commute !== "off" ? '<label class="check" for="start-home"><input type="checkbox" id="start-home" checked>' + homeWord() + "</label>" : "") +
       '<p class="err" id="start-err" role="alert"></p>' +
       '<button class="btn" type="submit">Start shift</button>' +
       '<button type="button" class="link" data-act="new">Forgot to log one? Add a past shift</button></form>';
@@ -286,27 +384,30 @@ function viewShift(){
 }
 
 function formHtml(){
-  const f = ui.form, s = f.id ? S.shifts.find(x => x.id === f.id) : null, h = S.meta.home;
-  const hasOdo = s ? s.odo0 != null : true, showHome = h.on || (s && s.homeMiles > 0);
+  const f = ui.form, s = f.id ? S.shifts.find(x => x.id === f.id) : null, m = S.meta;
+  const hasOdo = s ? s.odo0 != null : true, sub = (s && s.homeMiles > 0 ? s.homeMode : m.commute) === "sub";
+  const showHome = m.commute !== "off" || (s && s.homeMiles > 0);
   return '<form class="card" id="shift-form" novalidate><h2>' + (s ? "Edit shift" : "Add a past shift") + "</h2>" +
     '<label for="f-date">Date<input type="date" id="f-date" value="' + (s ? s.date : localDate()) + '" max="' + localDate() + '"></label>' +
     '<div><h3 style="margin-bottom:8px">Driving for</h3>' + chips(s ? s.services : []) + "</div>" +
+    (manyVehicles() || (s && s.veh && s.veh !== m.vehicles[0].id) ? vehSelect("f-veh", s ? vehOf(s) : m.vehicle) : "") +
     '<div class="row"><label class="check" for="f-mode-odo"><input type="radio" name="f-mode" id="f-mode-odo" value="odo"' + (hasOdo ? " checked" : "") + '>Odometer readings</label>' +
     '<label class="check" for="f-mode-mi"><input type="radio" name="f-mode" id="f-mode-mi" value="miles"' + (hasOdo ? "" : " checked") + ">Miles only</label></div>" +
     '<div class="grid2' + (hasOdo ? "" : " hide") + '" id="f-odo-fields"><label for="f-odo0">Start odometer<input id="f-odo0" inputmode="decimal" autocomplete="off" value="' + (s && s.odo0 != null ? s.odo0 : "") + '"></label>' +
     '<label for="f-odo1">End odometer<input id="f-odo1" inputmode="decimal" autocomplete="off" value="' + (s && s.odo1 != null ? s.odo1 : "") + '"></label></div>' +
     '<label for="f-miles" id="f-miles-field" class="' + (hasOdo ? "hide" : "") + '">Miles driven<input id="f-miles" inputmode="decimal" autocomplete="off" value="' + (s && !hasOdo ? s.miles : "") + '"></label>' +
-    (showHome ? '<label class="check" for="f-home"><input type="checkbox" id="f-home"' + (s ? (s.homeMiles > 0 ? " checked" : "") : " checked") + ">Add " + fmtMi(s && s.homeMiles > 0 ? s.homeMiles : h.miles) + " home miles</label>" : "") +
-    '<div class="grid2"><label for="f-place0">Started from, optional<input id="f-place0" list="places" autocomplete="off" value="' + esc(s ? s.place0 : "") + '"></label>' +
-    '<label for="f-place1">Ended at, optional<input id="f-place1" list="places" autocomplete="off" value="' + esc(s ? s.place1 : "") + '"></label></div>' +
+    placeField("f-place0", "Started from, optional", s ? s.place0 : "", "") +
+    placeField("f-place1", "Ended at, optional", s ? s.place1 : "", "") +
+    (showHome ? '<label for="f-homemi">Home miles to ' + (sub ? "subtract" : "add") + '<input id="f-homemi" inputmode="decimal" autocomplete="off" value="' + (s && s.homeMiles ? s.homeMiles : "") + '" placeholder="Fills in from saved places"></label>' : "") +
     '<div class="grid2"><label for="f-earn">Earnings, optional<input id="f-earn" inputmode="decimal" autocomplete="off" value="' + (s && s.earn ? s.earn : "") + '" placeholder="$"></label>' +
-    '<label for="f-note">Note, optional<input id="f-note" autocomplete="off" value="' + esc(s ? s.note : "") + '"></label></div>' +
+    '<label for="f-fees">Tolls and parking, optional<input id="f-fees" inputmode="decimal" autocomplete="off" value="' + (s && s.fees ? s.fees : "") + '" placeholder="$"></label></div>' +
+    '<label for="f-note">Note, optional<input id="f-note" autocomplete="off" value="' + esc(s ? s.note : "") + '"></label>' +
     '<p class="err" id="f-err" role="alert"></p>' +
     '<div class="row"><button class="btn" type="submit">' + (s ? "Save changes" : "Add to log") + '</button><button type="button" class="btn ghost" data-act="cancel-form">Cancel</button></div></form>';
 }
 
 function viewLog(){
-  const list = [...S.shifts].sort((a, b) => (b.date + (b.t0 || "")).localeCompare(a.date + (a.t0 || "")));
+  const list = [...S.shifts].sort((a, b) => sortKey(b).localeCompare(sortKey(a))), gap = gaps(), many = S.meta.vehicles.length > 1;
   let html = ui.form ? formHtml() : '<div class="row between"><h2>Shift log</h2><button class="btn small" data-act="new">Add a past shift</button></div>';
   if (!list.length) return html + '<p class="empty">No shifts logged yet. Start one on the Shift tab, or add a past shift here.</p>';
   html += '<section class="card" style="gap:0;padding-top:4px">';
@@ -317,16 +418,20 @@ function viewLog(){
       if (month) html += "</ul>";
       month = ym;
       const mt = list.filter(x => x.date.startsWith(ym)).reduce((n, x) => n + tot(x), 0);
-      html += '<div class="month"><h3>' + fmtMonth(ym) + "</h3><span class=\"note\">" + fmtMi(mt) + " mi</span></div><ul>";
+      html += '<div class="month"><h3>' + fmtMonth(ym) + '</h3><span class="note">' + fmtMi(mt) + " mi</span></div><ul>";
     }
-    const t = tot(s), times = s.t0 ? fmtTime(s.t0) + (s.t1 ? " to " + fmtTime(s.t1) : "") : "Entered by hand";
-    const detail = (s.odo0 != null ? "Odometer " + s.odo0 + " to " + s.odo1 : "Miles only") + (s.homeMiles ? ", plus " + fmtMi(s.homeMiles) + " home" : "") + (s.earn ? ", earned " + fmtUsd(s.earn) : "") + (s.note ? ". " + esc(s.note) : "");
-    html += '<li class="shift"><div class="when"><b>' + fmtDay(s.date) + '</b><div class="sub">' + esc(s.services.map(svcName).join(" + ")) + " · " + times + '</div><div class="sub">' + detail + "</div>" +
-      placeLine(s) + "</div>" +
+    const t = tot(s), times = s.t0 ? fmtTime(s.t0) + (s.t1 ? " to " + fmtTime(s.t1) : "") : "Entered by hand", g = gap[s.id];
+    const detail = (s.odo0 != null ? "Odometer " + s.odo0 + " to " + s.odo1 : "Miles only") + (many ? ", " + esc(vehName(vehOf(s))) : "") +
+      (s.homeMiles ? (s.homeMode === "sub" ? ", minus " : ", plus ") + fmtMi(s.homeMiles) + " home" : "") +
+      (s.fees ? ", tolls and parking " + fmtUsd(s.fees) : "") + (s.earn ? ", earned " + fmtUsd(s.earn) : "") + (s.note ? ". " + esc(s.note) : "");
+    const spot = k => s[k] && !nearestPlace(s[k]) ? '<button class="link" data-act="save-spot" data-id="' + s.id + '" data-k="' + k + '">Save ' + (k === "loc0" ? "start" : "end") + " spot</button>" : "";
+    html += '<li class="shift"><div class="when"><b>' + fmtDay(s.date) + '</b><div class="sub">' + esc(s.services.map(svcName).join(" + ")) + " · " + times + '</div><div class="sub">' + detail + "</div>" + placeLine(s) +
+      (g > 0.05 ? '<div class="sub">' + fmtMi(g) + " personal miles since the previous shift</div>" : "") +
+      (g < -0.05 ? '<div class="flag">Starts ' + fmtMi(-g) + " mi below the previous end reading. One of them is wrong.</div>" : "") + "</div>" +
       '<div class="num"><b>' + fmtMi(t) + ' mi</b><div class="sub">' + fmtUsd(t * rateFor(s.date)) + "</div></div>" +
       '<div class="acts">' + (ui.confirm === s.id
         ? '<span class="note">Delete this shift?</span><button class="btn small danger" data-act="del-yes" data-id="' + s.id + '">Delete</button><button class="btn small ghost" data-act="del-no">Keep</button>'
-        : '<button class="link" data-act="edit" data-id="' + s.id + '">Edit</button><button class="link" data-act="del" data-id="' + s.id + '">Delete</button>') +
+        : '<button class="link" data-act="edit" data-id="' + s.id + '">Edit</button><button class="link" data-act="del" data-id="' + s.id + '">Delete</button>' + spot("loc0") + spot("loc1")) +
       "</div></li>";
   }
   return html + "</ul></section>";
@@ -334,13 +439,13 @@ function viewLog(){
 
 function viewTotals(){
   const years = [...new Set([...S.meta.logYears, String(new Date().getFullYear()), ui.year])].sort().reverse();
-  const y = ui.year, t = totals(y), yr = S.meta.years[y] || {};
-  let html = '<div class="row between"><h2>Totals for tax time</h2><label for="year" style="flex-direction:row;align-items:center;gap:8px">Year<select id="year" style="width:auto">' + years.map(v => '<option' + (v === y ? " selected" : "") + ">" + v + "</option>").join("") + "</select></label></div>";
-  html += '<section class="card"><div class="figs"><div class="fig"><b>' + fmtMi(t.mi) + '</b><span>business miles</span></div><div class="fig"><b>' + fmtUsd(t.ded) + '</b><span>deduction at standard rate</span></div><div class="fig"><b>' + (t.earn ? fmtUsd(t.earn) : "—") + "</b><span>earnings entered</span></div></div>";
-  const rk = Object.keys(t.rates).sort();
-  if (rk.length) html += "<div>" + rk.map(r => '<div class="kv"><span>' + fmtMi(t.rates[r]) + " mi at " + fmtRate(Number(r)) + "</span><span>" + fmtUsd(t.rates[r] * r) + "</span></div>").join("") + "</div>";
-  if (Number(y) > LAST_RATE_YEAR) html += '<p class="warn">This prototype has no IRS rate for ' + y + " yet. It is using " + fmtRate(RATES[RATES.length - 1][1]) + " until that rate is added.</p>";
-  else if (y === "2026") html += '<p class="note">The 2026 rate changed mid-year: 72.5¢ through June 30, 76¢ from July 1. Each shift uses the rate for its date.</p>';
+  const y = ui.year, t = totals(y);
+  let html = '<div class="row between"><h2>Totals for tax time</h2><label for="year" style="flex-direction:row;align-items:center;gap:8px">Year<select id="year" style="width:auto">' + years.map(v => "<option" + (v === y ? " selected" : "") + ">" + v + "</option>").join("") + "</select></label></div>";
+  html += '<section class="card"><div class="figs"><div class="fig"><b>' + fmtMi(t.mi) + '</b><span>business miles</span></div><div class="fig"><b>' + fmtUsd(t.ded) + '</b><span>deduction at standard rate</span></div><div class="fig"><b>' + (t.earn ? fmtUsd(t.earn) : "—") + "</b><span>earnings entered</span></div></div><div>" +
+    Object.keys(t.rates).sort().map(r => '<div class="kv"><span>' + fmtMi(t.rates[r]) + " mi at " + fmtRate(Number(r)) + "</span><span>" + fmtUsd(t.rates[r] * r) + "</span></div>").join("") +
+    '<div class="kv"><span>Tolls and parking</span><span>' + fmtUsd(t.fees) + '</span></div><div class="kv total"><span>Mileage plus tolls and parking</span><span>' + fmtUsd(t.ded + t.fees) + "</span></div></div>";
+  if (Number(y) > LAST_RATE_YEAR) html += '<p class="warn">This app has no IRS rate for ' + y + " yet. It is using " + fmtRate(RATES[RATES.length - 1][1]) + " until that rate is added.</p>";
+  else if (y === "2026") html += '<p class="note">The 2026 rate changed mid-year: 72.5¢ through June 30, 76¢ from July 1. Each shift uses the rate for its date. Tolls and parking for business trips are deductible on top of the mileage rate.</p>';
   html += "</section>";
 
   html += '<section class="card" style="gap:4px"><h3>By service</h3>';
@@ -350,36 +455,69 @@ function viewTotals(){
     const b = t.by[id];
     html += '<div class="svc"><span class="name"><i style="background:' + svcColor(id) + '"></i>' + esc(svcName(id)) + "</span><b>" + fmtMi(b.mi) + " mi</b>" +
       '<div class="bar"><i style="width:' + (max ? Math.max(2, b.mi / max * 100) : 0) + "%;background:" + svcColor(id) + '"></i></div>' +
-      '<span class="sub">' + fmtUsd(b.ded) + " deduction · " + b.n + (b.n === 1 ? " shift" : " shifts") + (b.earn ? " · " + fmtUsd(b.earn) + " earned, " + fmtUsd(b.earn / b.mi) + " per mile" : "") + "</span></div>";
+      '<span class="sub">' + fmtUsd(b.ded) + " deduction · " + b.n + (b.n === 1 ? " shift" : " shifts") + (b.earn && b.mi ? " · " + fmtUsd(b.earn) + " earned, " + fmtUsd(b.earn / b.mi) + " per mile" : "") + "</span></div>";
   }
   html += "</section>";
 
-  const o0 = Number(yr.o0), o1 = Number(yr.o1), all = o1 - o0;
-  html += '<section class="card"><h3>Whole-year odometer</h3><p class="note">Record the reading on January 1 and December 31. Your tax preparer will want total miles for the year and the share that was business.</p>' +
-    '<div class="grid2"><label for="yr-o0">Start of ' + y + '<input id="yr-o0" inputmode="decimal" autocomplete="off" value="' + (yr.o0 ?? "") + '"></label><label for="yr-o1">End of ' + y + '<input id="yr-o1" inputmode="decimal" autocomplete="off" value="' + (yr.o1 ?? "") + '"></label></div>' +
-    (yr.o0 != null && yr.o1 != null && all > 0 ? '<div><div class="kv"><span>Total miles on the vehicle</span><span>' + fmtMi(all) + '</span></div><div class="kv"><span>Business share</span><span>' + Math.min(100, t.mi / all * 100).toFixed(1) + "%</span></div></div>" : "") + "</section>";
+  html += '<section class="card" style="gap:4px"><h3>By estimated-tax period</h3>' + PERIODS.map((p, i) => {
+    const q = t.periods[i];
+    return '<div class="svc"><span class="name">' + p[0] + "</span><b>" + fmtMi(q.mi) + ' mi</b><span class="sub">' + fmtUsd(q.ded + q.fees) + " deductions" + (q.earn ? " · " + fmtUsd(q.earn) + " earned" : "") + " · " + p[1] + "</span></div>";
+  }).join("") + "</section>";
 
-  html += '<section class="card"><h3>Export ' + y + '</h3><p class="note">One row per shift with date, services, odometer readings, miles, rate, deduction and location stamps.</p><div class="row">' +
-    '<button class="btn" data-act="csv">Save CSV</button>' + '<button class="btn ghost" data-act="copy">Copy as CSV</button></div><p class="note" id="export-msg" role="status"></p></section>';
+  const vid = S.meta.vehicles.some(v => v.id === ui.veh) ? ui.veh : S.meta.vehicle, yr = (S.meta.years[y] || {})[vid] || {}, all = Number(yr.o1) - Number(yr.o0), biz = t.byVeh[vid] || 0;
+  html += '<section class="card"><h3>Whole-year odometer</h3><p class="note">Record the reading on January 1 and December 31. Your tax preparer will want total miles for the year and the share that was business.</p>' +
+    (S.meta.vehicles.length > 1 ? vehSelect("yr-veh", vid) : "") +
+    '<div class="grid2"><label for="yr-o0">Start of ' + y + '<input id="yr-o0" inputmode="decimal" autocomplete="off" value="' + (yr.o0 ?? "") + '"></label><label for="yr-o1">End of ' + y + '<input id="yr-o1" inputmode="decimal" autocomplete="off" value="' + (yr.o1 ?? "") + '"></label></div>' +
+    (yr.o0 != null && yr.o1 != null && all > 0 ? '<div><div class="kv"><span>Total miles on the vehicle</span><span>' + fmtMi(all) + '</span></div><div class="kv"><span>Business miles on it</span><span>' + fmtMi(biz) + '</span></div><div class="kv"><span>Business share</span><span>' + Math.min(100, biz / all * 100).toFixed(1) + "%</span></div></div>" : "") + "</section>";
+
+  html += '<section class="card"><h3>Export ' + y + '</h3><p class="note">The CSV has one row per shift. The summary is a one-page report for your tax preparer that opens in any browser and prints.</p><div class="row">' +
+    '<button class="btn" data-act="csv">Save CSV</button><button class="btn ghost" data-act="summary">Save year-end summary</button><button class="btn ghost" data-act="copy">Copy as CSV</button></div>' + msg("export") + "</section>";
   return html;
 }
 
 function viewSetup(){
-  const h = S.meta.home;
-  return '<h2>Setup</h2><section class="card"><h3>Services you drive for</h3><div>' +
-    S.meta.services.filter(s => !s.gone).map(s => '<div class="kv"><span><i style="display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px;background:' + svcColor(s.id) + '"></i>' + esc(s.name) + '</span><button class="link" data-act="svc-del" data-id="' + s.id + '">Remove</button></div>').join("") +
-    '</div><form class="row" id="svc-form" novalidate><input id="svc-name" autocomplete="off" placeholder="Add a service, such as Shipt" style="flex:1 1 180px" maxlength="30"><button class="btn small" type="submit">Add</button></form></section>' +
-    '<section class="card"><h3>Home office miles</h3><label class="check" for="home-on"><input type="checkbox" id="home-on"' + (h.on ? " checked" : "") + '>Offer to add home miles to each shift</label>' +
-    '<label for="home-mi">Round trip from home to where you start working, in miles<input id="home-mi" inputmode="decimal" autocomplete="off" value="' + (h.miles || "") + '"></label>' +
-    '<p class="warn">Driving between home and work is normally commuting, which is not deductible. It can count only if your home office is your principal place of business. Check with a tax professional before turning this on. Leave it off if your start odometer reading is taken at home, or those miles are counted twice.</p></section>' +
-    '<section class="card"><h3>Location</h3><label class="check" for="gps-on"><input type="checkbox" id="gps-on"' + (S.meta.gps ? " checked" : "") + '>Stamp my location when a shift starts and ends</label>' +
+  const m = S.meta, h = m.homePlace;
+  const dot = id => '<i style="display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px;background:' + svcColor(id) + '"></i>';
+  let html = '<h2>Setup</h2><section class="card"><h3>Services you drive for</h3><div>' +
+    m.services.filter(s => !s.gone).map(s => '<div class="kv"><span>' + dot(s.id) + esc(s.name) + '</span><button class="link" data-act="svc-del" data-id="' + s.id + '">Remove</button></div>').join("") +
+    '</div><form class="row" id="svc-form" novalidate><input id="svc-name" autocomplete="off" placeholder="Add a service, such as Shipt" style="flex:1 1 180px" maxlength="30" aria-label="New service name"><button class="btn small" type="submit">Add</button></form></section>';
+
+  html += '<section class="card"><h3>Vehicles</h3><div>' +
+    liveVehicles().map(v => '<div class="kv"><input class="veh-name" data-id="' + v.id + '" id="vn-' + v.id + '" value="' + esc(v.name) + '" maxlength="30" aria-label="Vehicle name" style="flex:1">' + (liveVehicles().length > 1 ? '<button class="link" data-act="veh-del" data-id="' + v.id + '">Remove</button>' : "") + "</div>").join("") +
+    '</div><form class="row" id="veh-form" novalidate><input id="veh-name" autocomplete="off" placeholder="Add a vehicle, such as Silverado" style="flex:1 1 180px" maxlength="30" aria-label="New vehicle name"><button class="btn small" type="submit">Add</button></form>' +
+    '<p class="note">Each vehicle keeps its own odometer history. With two or more, the Shift tab asks which one you are driving.</p></section>';
+
+  html += '<section class="card"><h3>Home miles</h3><label for="commute">Miles between home and your first and last stop' +
+    '<select id="commute"><option value="off"' + (m.commute === "off" ? " selected" : "") + '>Leave them out. My readings start and end at the stops</option>' +
+    '<option value="add"' + (m.commute === "add" ? " selected" : "") + '>Add them to each shift</option>' +
+    '<option value="sub"' + (m.commute === "sub" ? " selected" : "") + ">Subtract them. My readings start and end at home</option></select></label>" +
+    '<p class="warn">Driving between home and work is normally commuting, which is not deductible. It can count only if your home office is your principal place of business. Check with a tax professional before choosing Add.</p>' +
+    '<label for="home-addr">Home address<input id="home-addr" autocomplete="street-address" value="' + esc(h ? h.addr : "") + '" placeholder="123 Main St, Sioux Falls, SD"></label>' +
+    '<div class="row"><button class="btn small" data-act="home-find">Find this address</button><button class="btn small ghost" data-act="home-here">Use where I am now</button></div>' +
+    (h ? '<p class="note">Home is set to ' + esc(h.label || "a pinned spot") + " (" + locLink(h) + ").</p>" : '<p class="note">No home location yet.</p>') + msg("home") +
+    '<p class="note">Finding an address or a driving route sends that address or pair of map points to OpenStreetMap\'s public servers. Your log never leaves the phone.</p></section>';
+
+  html += '<section class="card"><h3>Saved places</h3><div>' +
+    (m.places.length ? m.places.map(p => '<div class="place">' +
+      '<label for="pn-' + p.id + '">Name<input class="pl-name" data-id="' + p.id + '" id="pn-' + p.id + '" value="' + esc(p.name) + '" maxlength="40"></label>' +
+      '<p class="note">' + (p.addr ? esc(p.addr) + ". " : "") + (typeof p.lat === "number" ? "Pinned at " + locLink(p) + ". Shifts that start or end within 150 yards are labeled automatically." : "No map pin, so it cannot be matched by GPS or routed.") + "</p>" +
+      '<label for="pm-' + p.id + '">Driving miles from home, one way<input class="pl-mi" data-id="' + p.id + '" id="pm-' + p.id + '" inputmode="decimal" autocomplete="off" value="' + (p.homeMi ?? "") + '"></label>' +
+      '<div class="row">' + (h && typeof p.lat === "number" ? '<button class="link" data-act="place-route" data-id="' + p.id + '">Look up driving miles</button>' : "") + '<button class="link" data-act="place-del" data-id="' + p.id + '">Remove</button></div></div>').join("")
+      : '<p class="empty">No saved places yet. Add the stores you start from most.</p>') + "</div>" +
+    '<form class="stack" id="place-form" novalidate><label for="place-name">New place name<input id="place-name" autocomplete="off" placeholder="Walmart, Louise Ave" maxlength="40"></label>' +
+    '<label for="place-addr">Address, optional<input id="place-addr" autocomplete="off" placeholder="5521 E Arrowhead Pkwy, Sioux Falls, SD"></label>' +
+    '<div class="row"><button class="btn small" type="submit">Add place</button><button type="button" class="btn small ghost" data-act="place-here">Add using where I am now</button></div></form>' +
+    (h && m.places.some(p => typeof p.lat === "number") ? '<button class="link" data-act="routes-all">Look up driving miles for every pinned place</button>' : "") + msg("place") + "</section>";
+
+  html += '<section class="card"><h3>Location</h3><label class="check" for="gps-on"><input type="checkbox" id="gps-on"' + (m.gps ? " checked" : "") + '>Stamp my location when a shift starts and ends</label>' +
     '<p class="note">Your phone asks for permission the first time. The app has to be open on screen to get a fix, so it cannot follow your route in the background.</p></section>' +
     '<section class="card"><h3>Backup</h3><p class="note">Your log is kept in this app on this phone and nowhere else. Clearing website data or removing the app from your home screen erases it. ' +
-    (S.meta.lastBackup ? "Last backup: " + fmtDay(S.meta.lastBackup) + "." : "You have not made a backup yet.") + "</p>" +
+    (m.lastBackup ? "Last backup: " + fmtDay(m.lastBackup) + "." : "You have not made a backup yet.") + "</p>" +
     (ui.restore
       ? '<div class="row"><span class="note">Replace the ' + S.shifts.length + " shifts on this phone with the " + ui.restore.shifts.length + ' in that backup?</span><button class="btn small danger" data-act="restore-yes">Replace</button><button class="btn small ghost" data-act="restore-no">Cancel</button></div>'
       : '<div class="row"><button class="btn" data-act="backup">Save a backup file</button><label class="btn ghost" for="restore" style="position:relative;flex-direction:row">Restore from a backup<input type="file" id="restore" accept=".json,application/json" style="position:absolute;opacity:0;width:1px;height:1px;padding:0;border:0"></label></div>') +
-    '<p class="note" id="backup-msg" role="status"></p></section>';
+    msg("backup") + "</section>";
+  return html;
 }
 
 function render(){
@@ -388,85 +526,166 @@ function render(){
   paintStatus();
 }
 
-/* ---------- actions ---------- */
+/* ---------- exports ---------- */
+const sorted = y => totals(y).list.sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
 function csvFor(y){
   const q = v => { v = String(v ?? ""); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
-  const rows = [["Date","Start time","End time","Services","Odometer start","Odometer end","Miles driven","Home miles","Total miles","Rate per mile","Deduction","Earnings","Note","Start place","End place","Start lat","Start lon","End lat","End lon"]];
-  totals(y).list.sort((a, b) => (a.date + (a.t0 || "")).localeCompare(b.date + (b.t0 || ""))).forEach(s => {
+  const rows = [["Date","Start time","End time","Vehicle","Services","Odometer start","Odometer end","Miles driven","Home miles","Total miles","Rate per mile","Mileage deduction","Tolls and parking","Earnings","Note","Start place","End place","Start lat","Start lon","End lat","End lon"]];
+  sorted(y).forEach(s => {
     const t = tot(s), r = rateFor(s.date);
-    rows.push([s.date, s.t0 || "", s.t1 || "", s.services.map(svcName).join(" + "), s.odo0 ?? "", s.odo1 ?? "", s.miles, s.homeMiles || 0, r1(t), r, (t * r).toFixed(2), s.earn || "", s.note || "", s.place0 || "", s.place1 || "", s.loc0 ? s.loc0.lat : "", s.loc0 ? s.loc0.lon : "", s.loc1 ? s.loc1.lat : "", s.loc1 ? s.loc1.lon : ""]);
+    rows.push([s.date, s.t0 || "", s.t1 || "", vehName(vehOf(s)), s.services.map(svcName).join(" + "), s.odo0 ?? "", s.odo1 ?? "", s.miles, homeSigned(s), r1(t), r, (t * r).toFixed(2), s.fees || "", s.earn || "", s.note || "", s.place0 || "", s.place1 || "",
+      s.loc0 ? s.loc0.lat : "", s.loc0 ? s.loc0.lon : "", s.loc1 ? s.loc1.lat : "", s.loc1 ? s.loc1.lon : ""]);
   });
   return rows.map(r => r.map(q).join(",")).join("\r\n") + "\r\n";
 }
-function setErr(sel, msg){ const el = $(sel); if (el) el.textContent = msg; return false; }
+function summaryFor(y){
+  const t = totals(y), tr = (...c) => "<tr>" + c.map((v, i) => "<td" + (i ? ' class="n"' : "") + ">" + v + "</td>").join("") + "</tr>";
+  const th = (...c) => "<tr>" + c.map((v, i) => "<th" + (i ? ' class="n"' : "") + ">" + v + "</th>").join("") + "</tr>";
+  const veh = S.meta.vehicles.filter(v => t.byVeh[v.id] || (S.meta.years[y] || {})[v.id]).map(v => {
+    const yr = (S.meta.years[y] || {})[v.id] || {}, all = Number(yr.o1) - Number(yr.o0), biz = t.byVeh[v.id] || 0, ok = yr.o0 != null && yr.o1 != null && all > 0;
+    return tr(esc(v.name), yr.o0 ?? "not recorded", yr.o1 ?? "not recorded", ok ? fmtMi(all) : "", fmtMi(biz), ok ? Math.min(100, biz / all * 100).toFixed(1) + "%" : "");
+  }).join("");
+  return '<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Mileage summary ' + y + "</title><style>" +
+    "body{font:14px/1.4 Arial,Helvetica,sans-serif;color:#111;background:#fff;max-width:760px;margin:24px auto;padding:0 16px}h1{font-size:22px;margin:0 0 4px}h2{font-size:15px;margin:22px 0 6px}table{border-collapse:collapse;width:100%}th,td{border-bottom:1px solid #bbb;padding:5px 6px;text-align:left;vertical-align:top}th{font-size:12px}.n{text-align:right;white-space:nowrap}.s{color:#444;font-size:12px}.wide{overflow-x:auto}" +
+    "</style></head><body><h1>Business mileage summary, " + y + '</h1><p class="s">Prepared ' + fmtDay(localDate()) + " from a log kept at the time of each shift. Mileage deduction uses the IRS standard rate in effect on each date.</p>" +
+    "<h2>Totals</h2><table>" + tr("Business miles", fmtMi(t.mi)) + Object.keys(t.rates).sort().map(r => tr("Miles at " + fmtRate(Number(r)), fmtMi(t.rates[r]) + " mi = " + fmtUsd(t.rates[r] * r))).join("") +
+    tr("Mileage deduction", fmtUsd(t.ded)) + tr("Tolls and parking", fmtUsd(t.fees)) + tr("<b>Mileage plus tolls and parking</b>", "<b>" + fmtUsd(t.ded + t.fees) + "</b>") + tr("Earnings entered", fmtUsd(t.earn)) + tr("Shifts logged", t.list.length) + "</table>" +
+    "<h2>By service</h2><table>" + th("Service", "Shifts", "Miles", "Deduction", "Earnings") + Object.keys(t.by).sort((a, b) => t.by[b].mi - t.by[a].mi).map(id => tr(esc(svcName(id)), t.by[id].n, fmtMi(t.by[id].mi), fmtUsd(t.by[id].ded), fmtUsd(t.by[id].earn))).join("") + "</table>" +
+    "<h2>By estimated-tax period</h2><table>" + th("Period", "Miles", "Mileage deduction", "Tolls and parking", "Earnings") + PERIODS.map((p, i) => tr(p[0], fmtMi(t.periods[i].mi), fmtUsd(t.periods[i].ded), fmtUsd(t.periods[i].fees), fmtUsd(t.periods[i].earn))).join("") + "</table>" +
+    (veh ? "<h2>Vehicles</h2><table>" + th("Vehicle", "Odometer Jan 1", "Odometer Dec 31", "Total miles", "Business miles", "Business share") + veh + "</table>" : "") +
+    '<h2>Shift log</h2><div class="wide"><table>' + th("Date", "Odometer", "Miles", "Deduction") + sorted(y).map(s => { const x = tot(s);
+      return tr(s.date + '<div class="s">' + esc(s.services.map(svcName).join(" + ")) + (S.meta.vehicles.length > 1 ? ", " + esc(vehName(vehOf(s))) : "") + ([s.place0, s.place1].some(Boolean) ? ". " + esc([s.place0, s.place1].filter(Boolean).join(" to ")) : "") + "</div>",
+        s.odo0 != null ? s.odo0 + " to " + s.odo1 : "miles only", fmtMi(x) + (s.homeMiles ? '<div class="s">' + (s.homeMode === "sub" ? "less " : "incl. ") + fmtMi(s.homeMiles) + " home</div>" : ""), fmtUsd(x * rateFor(s.date))); }).join("") + "</table></div></body></html>";
+}
+
+/* ---------- actions ---------- */
+function setErr(sel, text){ const el = $(sel); if (el) el.textContent = text; return false; }
+function note(k, text){ ui.note[k] = text; const el = $("#" + k + "-msg"); if (el) el.textContent = text; }
+const again = () => { if (ui.tab === "setup") render(); };
+const fixErr = e => e && e.code === 1 ? "Location is turned off for this app. Allow it in Settings, then try again." : "Could not get a GPS fix. Try again outside or near a window.";
+function syncHomeField(){ const el = $("#f-homemi"); if (el && S.meta.commute !== "off") el.value = commuteFor(val("#f-place0"), val("#f-place1")) || ""; }
 
 document.addEventListener("click", async e => {
   const tab = e.target.closest("nav button");
-  if (tab){ ui.tab = tab.dataset.tab; ui.form = null; ui.confirm = null; ui.discard = false; render(); return; }
+  if (tab){ ui.tab = tab.dataset.tab; ui.form = null; ui.confirm = null; ui.discard = false; ui.note = {}; render(); return; }
   const b = e.target.closest("[data-act]"); if (!b) return;
-  const act = b.dataset.act, id = b.dataset.id;
+  const act = b.dataset.act, id = b.dataset.id, m = S.meta;
   if (act === "chip"){ b.setAttribute("aria-pressed", String(b.getAttribute("aria-pressed") !== "true")); return; }
+  if (act === "pick-place"){ const el = $("#" + b.dataset.target); if (el){ el.value = b.dataset.name; syncHomeField(); } return; }
   if (act === "new"){ ui.tab = "log"; ui.form = {id:null}; render(); window.scrollTo(0, 0); return; }
   if (act === "edit"){ ui.form = {id}; ui.confirm = null; render(); window.scrollTo(0, 0); return; }
   if (act === "cancel-form"){ ui.form = null; render(); return; }
   if (act === "del"){ ui.confirm = id; render(); return; }
   if (act === "del-no"){ ui.confirm = null; render(); return; }
-  if (act === "del-yes"){
-    const s = S.shifts.find(x => x.id === id); if (!s) return;
-    S.shifts = S.shifts.filter(x => x.id !== id); ui.confirm = null; commit([s.date.slice(0, 4)]); render(); return;
-  }
+  if (act === "del-yes"){ S.shifts = S.shifts.filter(x => x.id !== id); ui.confirm = null; commit(); render(); return; }
   if (act === "discard"){ ui.discard = true; render(); return; }
   if (act === "discard-no"){ ui.discard = false; render(); return; }
-  if (act === "discard-yes"){ S.meta.active = null; ui.discard = false; commit(); render(); return; }
+  if (act === "discard-yes"){ m.active = null; ui.discard = false; commit(); render(); return; }
   if (act === "svc-del"){
-    const used = S.shifts.some(s => s.services.includes(id)) || (S.meta.active && S.meta.active.services.includes(id));
-    if (used) S.meta.services.find(s => s.id === id).gone = true; else S.meta.services = S.meta.services.filter(s => s.id !== id);
+    const used = S.shifts.some(s => s.services.includes(id)) || (m.active && m.active.services.includes(id));
+    if (used) m.services.find(s => s.id === id).gone = true; else m.services = m.services.filter(s => s.id !== id);
     commit(); render(); return;
   }
+  if (act === "veh-del"){
+    if (liveVehicles().length < 2) return;
+    const used = S.shifts.some(s => vehOf(s) === id) || (m.active && m.active.veh === id) || id === m.vehicles[0].id;
+    if (used) m.vehicles.find(v => v.id === id).gone = true; else m.vehicles = m.vehicles.filter(v => v.id !== id);
+    if (m.vehicle === id) m.vehicle = liveVehicles()[0].id;
+    commit(); render(); return;
+  }
+  if (act === "save-spot"){
+    const s = S.shifts.find(x => x.id === id), k = b.dataset.k, pk = k === "loc0" ? "place0" : "place1"; if (!s || !s[k]) return;
+    let p = placeByName(s[pk]);
+    if (p){ p.lat = s[k].lat; p.lon = s[k].lon; }
+    else { p = {id: "p" + newId(), name: s[pk] || "New place", addr: "", lat: s[k].lat, lon: s[k].lon, homeMi: null}; m.places.push(p); if (!s[pk]) s[pk] = p.name; }
+    commit(); ui.tab = "setup"; ui.note = {place: "Saved " + p.name + ". Rename it here if you like."}; render();
+    try { if (await routePlace(p)){ commit(); again(); } } catch(err){}
+    return;
+  }
+  if (act === "home-find" || act === "home-here"){
+    const addr = val("#home-addr");
+    if (act === "home-find" && !addr) return note("home", "Type your address first.");
+    note("home", act === "home-find" ? "Looking up that address." : "Getting your location.");
+    try {
+      const g = act === "home-find" ? await geocode(addr) : await getFix();
+      m.homePlace = {addr: act === "home-find" ? addr : "", lat: g.lat, lon: g.lon, label: g.label || "the spot you pinned"};
+      commit(); ui.note.home = "Home is set. Use the link under Saved places to refresh driving miles."; again();
+    } catch(err){ note("home", act === "home-here" ? fixErr(err) : err.message === "notfound" ? "That address was not found. Add the city and state, or use where you are now." : "The address lookup did not answer. Check your signal and try again."); }
+    return;
+  }
+  if (act === "place-here"){
+    const name = val("#place-name");
+    if (!name) return note("place", "Give the place a name first.");
+    if (placeByName(name)) return note("place", "You already have a place with that name.");
+    note("place", "Getting your location.");
+    try {
+      const g = await getFix(), p = {id: "p" + newId(), name, addr: "", lat: g.lat, lon: g.lon, homeMi: null};
+      m.places.push(p); commit(); ui.note.place = "Added " + name + "."; again();
+      try { if (await routePlace(p)){ commit(); again(); } } catch(err){}
+    } catch(err){ note("place", fixErr(err)); }
+    return;
+  }
+  if (act === "place-del"){ m.places = m.places.filter(p => p.id !== id); commit(); render(); return; }
+  if (act === "place-route" || act === "routes-all"){
+    const list = act === "routes-all" ? m.places.filter(p => typeof p.lat === "number") : m.places.filter(p => p.id === id);
+    note("place", "Looking up driving miles.");
+    let done = 0;
+    for (const p of list){ try { if (await routePlace(p)) done++; } catch(err){} }
+    commit(); ui.note.place = done === list.length ? "Driving miles updated." : "The route lookup did not answer for " + (list.length - done) + " of " + list.length + ". Try again, or type the miles in."; again();
+    return;
+  }
   if (act === "backup"){
-    try { await saveFile("shift-miles-backup-" + localDate() + ".json", JSON.stringify({app:"shift-miles", v:1, S}), "application/json"); S.meta.lastBackup = localDate(); commit(); render(); }
-    catch(err){ $("#backup-msg").textContent = err && err.name === "AbortError" ? "Backup cancelled." : "The backup did not save. Open the app in Safari and try again."; }
+    try { await saveFile("shift-miles-backup-" + localDate() + ".json", JSON.stringify({app:"shift-miles", v:2, S}), "application/json"); m.lastBackup = localDate(); commit(); render(); }
+    catch(err){ note("backup", err && err.name === "AbortError" ? "Backup cancelled." : "The backup did not save. Open the app in Safari and try again."); }
     return;
   }
   if (act === "restore-no"){ ui.restore = null; render(); return; }
   if (act === "restore-yes"){ S = ui.restore; ui.restore = null; commit(); render(); return; }
-  if (act === "csv" || act === "copy"){
-    const msg = $("#export-msg"), data = csvFor(ui.year);
-    if (!totals(ui.year).list.length){ msg.textContent = "There are no shifts in " + ui.year + " to export."; return; }
+  if (act === "csv" || act === "copy" || act === "summary"){
+    if (!totals(ui.year).list.length) return note("export", "There are no shifts in " + ui.year + " to export.");
     try {
-      if (act === "csv"){ await saveFile("shift-miles-" + ui.year + ".csv", data, "text/csv"); msg.textContent = "Done. Pick Save to Files in the share sheet to keep it on your phone."; }
-      else { await navigator.clipboard.writeText(data); msg.textContent = "Copied. Paste it into a spreadsheet or a note."; }
-    } catch(err){
-      msg.textContent = act === "csv" ? (err && err.name === "AbortError" ? "Cancelled." : "The file did not save. Try Copy as CSV instead.") : "Copying was blocked here. Try Save CSV instead.";
-    }
+      if (act === "csv"){ await saveFile("shift-miles-" + ui.year + ".csv", csvFor(ui.year), "text/csv"); note("export", "Done. Pick Save to Files in the share sheet to keep it on your phone."); }
+      else if (act === "summary"){ await saveFile("mileage-summary-" + ui.year + ".html", summaryFor(ui.year), "text/html"); note("export", "Done. Open the file in Safari to print it or save it as a PDF."); }
+      else { await navigator.clipboard.writeText(csvFor(ui.year)); note("export", "Copied. Paste it into a spreadsheet or a note."); }
+    } catch(err){ note("export", err && err.name === "AbortError" ? "Cancelled." : act === "copy" ? "Copying was blocked here. Try Save CSV instead." : "The file did not save. Try Copy as CSV instead."); }
   }
 });
 
-document.addEventListener("submit", e => {
+document.addEventListener("submit", async e => {
   e.preventDefault();
-  const f = e.target;
+  const f = e.target, m = S.meta;
   if (f.id === "start-form"){
-    const odo = numVal("#start-odo"), svcs = readChips(f);
+    const odo = numVal("#start-odo"), svcs = readChips(f), veh = val("#start-veh") || m.vehicle, last = m.lastOdo[veh];
     if (!svcs.length) return setErr("#start-err", "Pick the service you are driving for.");
     if (!(odo >= 0)) return setErr("#start-err", "Enter your odometer reading as a number, such as 48210.4.");
-    const hb = $("#start-home");
-    const st0 = Date.now();
-    S.meta.active = {start: st0, odo, services: svcs, home: !!(hb && hb.checked), loc0: null, place0: $("#start-place").value.trim()};
+    if (last != null && odo < last && ui.gapOk !== odo){ ui.gapOk = odo; return setErr("#start-err", "That is below your last end reading of " + last + " for this vehicle. Check the number, or tap Start shift again to use it."); }
+    const hb = $("#start-home"), st0 = Date.now();
+    m.vehicle = veh; ui.gapOk = null;
+    m.active = {start: st0, odo, services: svcs, veh, home: !!(hb && hb.checked), loc0: null, place0: val("#start-place")};
     commit(); render();
-    stampLocation(loc => { if (S.meta.active && S.meta.active.start === st0) S.meta.active.loc0 = loc; });
+    stampLocation(loc => {
+      const a = S.meta.active; if (!a || a.start !== st0) return;
+      a.loc0 = loc; if (!a.place0){ const p = nearestPlace(loc); if (p) a.place0 = p.name; }
+    });
   } else if (f.id === "end-form"){
-    const a = S.meta.active, odo1 = numVal("#end-odo"), earn = numVal("#end-earn");
+    const a = m.active, odo1 = numVal("#end-odo");
     if (!(odo1 >= a.odo)) return setErr("#end-err", "The reading must be a number at or above your start of " + a.odo + ".");
-    if ($("#end-earn").value.trim() !== "" && !(earn >= 0)) return setErr("#end-err", "Enter earnings as a number, or leave it blank.");
-    const st = new Date(a.start), date = localDate(st);
-    const sid = newId();
-    S.shifts.push({id:sid, loc0: a.loc0 || null, loc1: null, place0: a.place0 || "", place1: $("#end-place").value.trim(), date, t0:hhmm(st), t1:hhmm(), odo0:a.odo, odo1, miles:r1(odo1 - a.odo), homeMiles: a.home ? S.meta.home.miles : 0, services:a.services, earn: earn > 0 ? earn : 0, note: $("#end-note").value.trim()});
-    S.meta.active = null; S.meta.lastOdo = odo1;
+    const earn = optNum("#end-earn", "#end-err", "earnings"), fees = optNum("#end-fees", "#end-err", "tolls and parking");
+    if (earn === null || fees === null) return;
+    const st = new Date(a.start), date = localDate(st), sid = newId(), p1 = val("#end-place");
+    S.shifts.push({id: sid, date, t0: hhmm(st), t1: hhmm(), veh: a.veh || m.vehicles[0].id, odo0: a.odo, odo1, miles: r1(odo1 - a.odo),
+      homeAuto: !!a.home, homeMode: m.commute === "sub" ? "sub" : "add", homeMiles: a.home ? commuteFor(a.place0, p1) : 0,
+      services: a.services, earn, fees, note: val("#end-note"), place0: a.place0 || "", place1: p1, loc0: a.loc0 || null, loc1: null});
+    m.lastOdo[a.veh || m.vehicles[0].id] = odo1; m.active = null;
     commit(); render();
-    stampLocation(loc => { const s = S.shifts.find(x => x.id === sid); if (s) s.loc1 = loc; });
+    stampLocation(loc => {
+      const s = S.shifts.find(x => x.id === sid); if (!s) return;
+      s.loc1 = loc;
+      if (!s.place1){ const p = nearestPlace(loc); if (p){ s.place1 = p.name; if (s.homeAuto) s.homeMiles = commuteFor(s.place0, s.place1); } }
+    });
   } else if (f.id === "shift-form"){
     const old = ui.form.id ? S.shifts.find(x => x.id === ui.form.id) : null;
-    const date = $("#f-date").value, svcs = readChips(f), byOdo = $("#f-mode-odo").checked, earn = numVal("#f-earn");
+    const date = val("#f-date"), svcs = readChips(f), byOdo = $("#f-mode-odo").checked;
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return setErr("#f-err", "Pick the date of the shift.");
     if (date > localDate()) return setErr("#f-err", "The date cannot be in the future.");
     if (!svcs.length) return setErr("#f-err", "Pick the service you drove for.");
@@ -480,18 +699,39 @@ document.addEventListener("submit", e => {
       if (!(miles > 0)) return setErr("#f-err", "Enter the miles driven as a number above zero.");
       miles = r1(miles);
     }
-    if ($("#f-earn").value.trim() !== "" && !(earn >= 0)) return setErr("#f-err", "Enter earnings as a number, or leave it blank.");
-    const hb = $("#f-home"), homeMiles = hb && hb.checked ? (old && old.homeMiles > 0 ? old.homeMiles : S.meta.home.miles) : 0;
-    const rec = {id: old ? old.id : newId(), loc0: old ? old.loc0 || null : null, loc1: old ? old.loc1 || null : null, place0: $("#f-place0").value.trim(), place1: $("#f-place1").value.trim(), date, t0: old ? old.t0 || null : null, t1: old ? old.t1 || null : null, odo0, odo1, miles, homeMiles, services: svcs, earn: earn > 0 ? earn : 0, note: $("#f-note").value.trim()};
-    const years = [date.slice(0, 4)];
-    if (old){ years.push(old.date.slice(0, 4)); S.shifts = S.shifts.map(x => x.id === old.id ? rec : x); } else S.shifts.push(rec);
-    if (odo1 != null && (S.meta.lastOdo == null || odo1 > S.meta.lastOdo)) S.meta.lastOdo = odo1;
-    ui.form = null; commit([...new Set(years)]); render();
+    const earn = optNum("#f-earn", "#f-err", "earnings"), fees = optNum("#f-fees", "#f-err", "tolls and parking"), home = optNum("#f-homemi", "#f-err", "home miles");
+    if (earn === null || fees === null || home === null) return;
+    const veh = val("#f-veh") || (old ? vehOf(old) : m.vehicle);
+    const rec = {id: old ? old.id : newId(), date, t0: old ? old.t0 || null : null, t1: old ? old.t1 || null : null, veh, odo0, odo1, miles,
+      homeAuto: false, homeMode: old && old.homeMiles > 0 ? old.homeMode || "add" : (m.commute === "sub" ? "sub" : "add"), homeMiles: r1(home),
+      services: svcs, earn, fees, note: val("#f-note"), place0: val("#f-place0"), place1: val("#f-place1"), loc0: old ? old.loc0 || null : null, loc1: old ? old.loc1 || null : null};
+    if (old) S.shifts = S.shifts.map(x => x.id === old.id ? rec : x); else S.shifts.push(rec);
+    if (odo1 != null && (m.lastOdo[veh] == null || odo1 > m.lastOdo[veh])) m.lastOdo[veh] = odo1;
+    ui.form = null; commit(); render();
   } else if (f.id === "svc-form"){
-    const name = $("#svc-name").value.trim(); if (!name) return;
-    const hit = S.meta.services.find(s => s.name.toLowerCase() === name.toLowerCase());
-    if (hit) hit.gone = false; else S.meta.services.push({id: "s" + newId(), name});
+    const name = val("#svc-name"); if (!name) return;
+    const hit = m.services.find(s => s.name.toLowerCase() === name.toLowerCase());
+    if (hit) hit.gone = false; else m.services.push({id: "s" + newId(), name});
     commit(); render();
+  } else if (f.id === "veh-form"){
+    const name = val("#veh-name"); if (!name) return;
+    const hit = m.vehicles.find(v => v.name.toLowerCase() === name.toLowerCase());
+    if (hit) hit.gone = false; else m.vehicles.push({id: "v" + newId(), name});
+    commit(); render();
+  } else if (f.id === "place-form"){
+    const name = val("#place-name"), addr = val("#place-addr");
+    if (!name) return note("place", "Give the place a name first.");
+    if (placeByName(name)) return note("place", "You already have a place with that name.");
+    const p = {id: "p" + newId(), name, addr, homeMi: null};
+    let text = "Added " + name + ".";
+    if (addr){
+      note("place", "Looking up that address.");
+      try { const g = await geocode(addr); p.lat = g.lat; p.lon = g.lon; }
+      catch(err){ text = "Added " + name + " without a map pin, because the address " + (err.message === "notfound" ? "was not found." : "lookup did not answer."); }
+    }
+    m.places.push(p); commit();
+    try { if (await routePlace(p)) commit(); } catch(err){ text += " The route lookup did not answer, so type the miles from home."; }
+    ui.note.place = text; again();
   }
 });
 
@@ -499,17 +739,28 @@ document.addEventListener("input", e => {
   if (e.target.id === "end-odo"){
     const a = S.meta.active, v = parseFloat(e.target.value), el = $("#live-miles");
     if (!(v >= a.odo)) el.textContent = e.target.value.trim() ? "That is below your start reading" : "Enter the reading to see miles driven";
-    else { const mi = r1(v - a.odo) + (a.home ? S.meta.home.miles : 0); el.textContent = fmtMi(mi) + " miles · " + fmtUsd(mi * rateFor(localDate(new Date(a.start)))) + " deduction"; }
+    else { const mi = r1(v - a.odo); el.textContent = fmtMi(mi) + " miles driven · " + fmtUsd(mi * rateFor(localDate(new Date(a.start)))) + " deduction"; }
   }
 });
 
 document.addEventListener("change", e => {
-  const t = e.target;
+  const t = e.target, m = S.meta, cls = c => t.classList && t.classList.contains(c);
   if (t.name === "f-mode"){ const odo = $("#f-mode-odo").checked; $("#f-odo-fields").classList.toggle("hide", !odo); $("#f-miles-field").classList.toggle("hide", odo); }
+  else if (t.id === "f-place0" || t.id === "f-place1") syncHomeField();
   else if (t.id === "year"){ ui.year = t.value; render(); }
-  else if (t.id === "home-on"){ S.meta.home.on = t.checked; commit(); }
-  else if (t.id === "home-mi"){ const v = parseFloat(t.value); S.meta.home.miles = v > 0 ? r1(v) : 0; commit(); }
-  else if (t.id === "gps-on"){ S.meta.gps = t.checked; commit(); }
+  else if (t.id === "yr-veh"){ ui.veh = t.value; render(); }
+  else if (t.id === "start-veh"){ m.vehicle = t.value; commit(); const el = $("#start-odo"); if (el) el.value = m.lastOdo[t.value] ?? ""; }
+  else if (t.id === "commute"){ m.commute = t.value; commit(); }
+  else if (t.id === "gps-on"){ m.gps = t.checked; commit(); }
+  else if (cls("veh-name")){ const v = m.vehicles.find(x => x.id === t.dataset.id), name = t.value.trim(); if (v && name){ v.name = name; commit(); } else if (v) t.value = v.name; }
+  else if (cls("pl-name")){
+    const p = m.places.find(x => x.id === t.dataset.id), name = t.value.trim(); if (!p) return;
+    const clash = placeByName(name);
+    if (!name || (clash && clash !== p)){ t.value = p.name; return; }
+    S.shifts.forEach(s => { if (s.place0 === p.name) s.place0 = name; if (s.place1 === p.name) s.place1 = name; });
+    p.name = name; commit();
+  }
+  else if (cls("pl-mi")){ const p = m.places.find(x => x.id === t.dataset.id), v = parseFloat(t.value); if (p){ p.homeMi = v > 0 ? r1(v) : null; commit(); } }
   else if (t.id === "restore"){
     const file = t.files && t.files[0]; if (!file) return;
     file.text().then(txt => {
@@ -517,10 +768,11 @@ document.addEventListener("change", e => {
       if (!raw || raw.app !== "shift-miles" || !raw.S || !Array.isArray(raw.S.shifts)) throw new Error("format");
       const next = {meta: fixMeta(raw.S.meta), shifts: raw.S.shifts};
       if (S.shifts.length){ ui.restore = next; render(); } else { S = next; commit(); render(); }
-    }).catch(() => { const m = $("#backup-msg"); if (m) m.textContent = "That file is not a Shift Miles backup."; });
+    }).catch(() => note("backup", "That file is not a Shift Miles backup."));
   }
   else if (t.id === "yr-o0" || t.id === "yr-o1"){
-    const yr = (S.meta.years[ui.year] = S.meta.years[ui.year] || {}), v = parseFloat(t.value), k = t.id === "yr-o0" ? "o0" : "o1";
+    const vid = m.vehicles.some(v => v.id === ui.veh) ? ui.veh : m.vehicle, yy = (m.years[ui.year] = m.years[ui.year] || {}), yr = (yy[vid] = yy[vid] || {});
+    const v = parseFloat(t.value), k = t.id === "yr-o0" ? "o0" : "o1";
     if (v >= 0) yr[k] = v; else delete yr[k];
     commit(); render();
   }
