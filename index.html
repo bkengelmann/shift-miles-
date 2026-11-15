@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Shift Miles">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Shift Miles</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: one phone-width column; an odometer plate is the only loud element, everything else is quiet ledger rows. */
+:root{
+  --bg:#eceeed; --surface:#ffffff; --ink:#1b2024; --muted:#5a646b; --line:#d2d7d5;
+  --accent:#b9700a; --good:#2c7a4b; --danger:#b3372c;
+  --odo:#14181b; --odo-ink:#f2f0e8; --odo-tenth:#e9a23b; --odo-tenth-ink:#14181b;
+  --display:"Barlow Condensed","Arial Narrow",Arial,sans-serif;
+  --body:"Barlow","Helvetica Neue",Arial,sans-serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#13171a; --surface:#1c2226; --ink:#e9ebe6; --muted:#98a2a8; --line:#313a40;
+    --accent:#e9a23b; --good:#5fbf86; --danger:#ef7d70; --odo:#090c0e;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#13171a; --surface:#1c2226; --ink:#e9ebe6; --muted:#98a2a8; --line:#313a40;
+  --accent:#e9a23b; --good:#5fbf86; --danger:#ef7d70; --odo:#090c0e;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:400 16px/1.45 var(--body);font-variant-numeric:tabular-nums}
+.wrap{max-width:540px;margin:0 auto;padding:calc(16px + env(safe-area-inset-top)) calc(16px + env(safe-area-inset-right)) calc(48px + env(safe-area-inset-bottom)) calc(16px + env(safe-area-inset-left));display:flex;flex-direction:column;gap:16px}
+header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+h1{font:700 30px/1 var(--display);letter-spacing:.02em;text-transform:uppercase;margin:0}
+h2{font:600 22px/1.1 var(--display);letter-spacing:.02em;text-transform:uppercase;margin:0;text-wrap:balance}
+h3{font:600 13px/1.2 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0}
+p{margin:0}
+a{color:inherit}
+#status{font-size:13px;color:var(--muted)}
+#status::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);margin-right:6px}
+#status[data-s="cloud"]::before{background:var(--good)}
+#status[data-s="local"]::before{background:var(--accent)}
+nav{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--line)}
+nav button{font:600 17px/1 var(--display);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);background:none;border:0;border-bottom:3px solid transparent;padding:12px 4px;cursor:pointer}
+nav button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--accent)}
+main{display:flex;flex-direction:column;gap:16px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:14px}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.between{justify-content:space-between}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+label{display:flex;flex-direction:column;gap:6px;font-size:14px;font-weight:500;color:var(--muted)}
+label.check{flex-direction:row;align-items:center;gap:10px;color:var(--ink);font-weight:400;font-size:15px}
+input,select{font:500 16px/1.2 var(--body);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:11px 12px;width:100%;min-width:0;font-variant-numeric:tabular-nums}
+input[type=checkbox],input[type=radio]{width:20px;height:20px;flex:none;accent-color:var(--accent);padding:0}
+input.big{font:600 28px/1 var(--display);letter-spacing:.04em;padding:12px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.btn{font:600 18px/1 var(--display);letter-spacing:.06em;text-transform:uppercase;border-radius:8px;border:1px solid var(--ink);background:var(--ink);color:var(--bg);padding:14px 18px;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+.btn.small{font-size:15px;padding:9px 12px}
+.btn.danger{background:var(--danger);border-color:var(--danger);color:#fff}
+.link{background:none;border:0;padding:4px 0;color:var(--muted);font:500 14px var(--body);text-decoration:underline;cursor:pointer}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{display:inline-flex;align-items:center;gap:8px;font:500 15px var(--body);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:8px 14px;cursor:pointer}
+.chip i{width:10px;height:10px;border-radius:50%;flex:none}
+.chip[aria-pressed="true"]{border-color:var(--ink);box-shadow:inset 0 0 0 1px var(--ink);font-weight:600}
+.odo{display:inline-flex;gap:3px;background:var(--odo);padding:8px;border-radius:8px;align-self:flex-start}
+.odo span{font:700 34px/1 var(--display);color:var(--odo-ink);background:#ffffff14;border-radius:4px;padding:6px 7px;min-width:28px;text-align:center}
+.odo .tenth{background:var(--odo-tenth);color:var(--odo-tenth-ink)}
+.figs{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.fig b{display:block;font:700 28px/1.05 var(--display);letter-spacing:.01em}
+.fig span{font-size:13px;color:var(--muted)}
+.live{font:600 20px var(--display);letter-spacing:.03em}
+.err{color:var(--danger);font-size:14px;font-weight:500}
+.err:empty{display:none}
+.note{font-size:14px;color:var(--muted);max-width:60ch}
+.warn{font-size:14px;border-left:3px solid var(--accent);padding:2px 0 2px 12px;max-width:60ch}
+.empty{color:var(--muted);padding:8px 0}
+ul{list-style:none;margin:0;padding:0}
+.month{display:flex;justify-content:space-between;align-items:baseline;padding:14px 0 6px;border-bottom:1px solid var(--line)}
+.shift{display:grid;grid-template-columns:1fr auto;gap:4px 12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.shift .when b{font-weight:600}
+.shift .sub{font-size:14px;color:var(--muted);overflow-wrap:anywhere}
+.shift .num{text-align:right}
+.shift .num b{font:700 22px/1 var(--display)}
+.shift .acts{grid-column:1/-1;display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.svc{display:grid;grid-template-columns:1fr auto;gap:4px 12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.svc:last-child{border-bottom:0}
+.svc .name{display:flex;align-items:center;gap:8px;font-weight:600}
+.svc .name i{width:10px;height:10px;border-radius:50%}
+.svc .bar{grid-column:1/-1;height:8px;background:var(--bg);border-radius:4px;overflow:hidden}
+.svc .bar i{display:block;height:100%;border-radius:4px}
+.svc .sub{grid-column:1/-1;font-size:14px;color:var(--muted)}
+.kv{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line);font-size:15px}
+.kv:last-child{border-bottom:0}
+.hide{display:none!important}
+@media (max-width:380px){.odo span{font-size:28px;min-width:23px;padding:6px 5px}.figs{grid-template-columns:1fr 1fr}}
+@media (prefers-reduced-motion:no-preference){.btn,.chip{transition:opacity .12s}.btn:active,.chip:active{opacity:.7}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Shift Miles</h1>
+    <span id="status" data-s="cloud">Saved on this phone</span>
+  </header>
+  <nav role="tablist" aria-label="Sections">
+    <button role="tab" data-tab="shift" aria-selected="true">Shift</button>
+    <button role="tab" data-tab="log" aria-selected="false">Log</button>
+    <button role="tab" data-tab="totals" aria-selected="false">Totals</button>
+    <button role="tab" data-tab="setup" aria-selected="false">Setup</button>
+  </nav>
+  <main id="main"></main>
+</div>
+
+<script>
+"use strict";
+/* ---------- helpers ---------- */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const clone = o => JSON.parse(JSON.stringify(o));
+const r1 = n => Math.round(n * 10) / 10;
+const pad = n => String(n).padStart(2, "0");
+const localDate = (d = new Date()) => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+const hhmm = (d = new Date()) => pad(d.getHours()) + ":" + pad(d.getMinutes());
+const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const fmtMi = n => (Math.round(n * 10) / 10).toLocaleString("en-US", {minimumFractionDigits:1, maximumFractionDigits:1});
+const fmtUsd = n => n.toLocaleString("en-US", {style:"currency", currency:"USD"});
+const fmtDay = iso => new Date(iso + "T12:00:00").toLocaleDateString("en-US", {weekday:"short", month:"short", day:"numeric"});
+const fmtMonth = ym => new Date(ym + "-15T12:00:00").toLocaleDateString("en-US", {month:"long", year:"numeric"});
+const fmtTime = t => { if (!t) return ""; const [h, m] = t.split(":").map(Number); return ((h % 12) || 12) + ":" + pad(m) + (h < 12 ? " AM" : " PM"); };
+const numVal = sel => { const el = $(sel); if (!el || el.value.trim() === "") return NaN; return parseFloat(el.value); };
+
+/* ---------- IRS standard mileage rates, by trip date ---------- */
+const RATES = [["2024-01-01", 0.67], ["2025-01-01", 0.70], ["2026-01-01", 0.725], ["2026-07-01", 0.76]];
+const LAST_RATE_YEAR = 2026;
+function rateFor(date){ let r = RATES[0][1]; for (const [from, v] of RATES) if (date >= from) r = v; return r; }
+const fmtRate = r => (r * 100).toFixed(1).replace(/\.0$/, "") + "¢";
+
+/* ---------- state ---------- */
+const COLORS = ["#3b82c4", "#d9822b", "#4a9d6e", "#a25bb8", "#c9504a", "#7a8794"];
+const DEFAULT_SERVICES = ["DoorDash", "Spark", "Uber Eats", "Instacart", "Grubhub"].map((n, i) => ({id: "s" + (i + 1), name: n}));
+function blankMeta(){ return {v:1, services: clone(DEFAULT_SERVICES), active:null, home:{on:false, miles:0}, years:{}, logYears:[], lastOdo:null, gps:true, lastBackup:null}; }
+function fixMeta(m){
+  const b = blankMeta(); m = m && typeof m === "object" ? m : {};
+  return {v:1,
+    services: Array.isArray(m.services) && m.services.length ? m.services : b.services,
+    active: m.active || null,
+    home: {on: !!(m.home && m.home.on), miles: Number(m.home && m.home.miles) || 0},
+    years: m.years && typeof m.years === "object" ? m.years : {},
+    logYears: Array.isArray(m.logYears) ? m.logYears : [],
+    lastOdo: typeof m.lastOdo === "number" ? m.lastOdo : null,
+    gps: m.gps !== false, lastBackup: m.lastBackup || null};
+}
+let S = {meta: blankMeta(), shifts: []};
+const ui = {tab:"shift", year:String(new Date().getFullYear()), form:null, confirm:null, discard:false, restore:null};
+
+const tot = s => (s.miles || 0) + (s.homeMiles || 0);
+const svcName = id => (S.meta.services.find(s => s.id === id) || {name:"Removed service"}).name;
+const svcColor = id => { const i = S.meta.services.findIndex(s => s.id === id); return COLORS[(i < 0 ? 5 : i) % COLORS.length]; };
+function totals(y){
+  const list = S.shifts.filter(s => s.date.startsWith(y + "-"));
+  let mi = 0, ded = 0, earn = 0; const by = {}, rates = {};
+  for (const s of list){
+    const t = tot(s), r = rateFor(s.date), n = s.services.length || 1;
+    mi += t; ded += t * r; earn += s.earn || 0;
+    rates[r] = (rates[r] || 0) + t;
+    for (const id of s.services){
+      const b = (by[id] = by[id] || {mi:0, ded:0, earn:0, n:0});
+      b.mi += t / n; b.ded += t * r / n; b.earn += (s.earn || 0) / n; b.n++;
+    }
+  }
+  return {list, mi, ded, earn, by, rates};
+}
+
+/* ---------- storage: this phone only ---------- */
+const LS_KEY = "shift-miles-v1";
+let saveOk = true;
+function saveLocal(){ try { localStorage.setItem(LS_KEY, JSON.stringify({S})); saveOk = true; } catch(e){ saveOk = false; } }
+function loadLocal(){
+  try { const raw = JSON.parse(localStorage.getItem(LS_KEY) || "null"); if (raw && raw.S) S = {meta: fixMeta(raw.S.meta), shifts: Array.isArray(raw.S.shifts) ? raw.S.shifts : []}; }
+  catch(e){ saveOk = false; }
+}
+function commit(){
+  S.meta.logYears = [...new Set(S.shifts.map(s => s.date.slice(0, 4)))].sort();
+  saveLocal(); paintStatus();
+}
+function paintStatus(){
+  const el = $("#status");
+  el.dataset.s = saveOk ? "cloud" : "local";
+  el.textContent = saveOk ? "Saved on this phone" : "Could not save. Turn off private browsing";
+}
+/* Hand a file to the share sheet (Save to Files, Notes, Mail); fall back to a plain download. */
+async function saveFile(name, text, type){
+  const file = new File([text], name, {type});
+  if (navigator.canShare && navigator.canShare({files:[file]})){ await navigator.share({files:[file]}); return; }
+  const a = document.createElement("a"); a.href = URL.createObjectURL(file); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+/* Ask the phone for one GPS fix; never blocks the shift. */
+function stampLocation(apply){
+  if (!S.meta.gps || !navigator.geolocation) return;
+  navigator.geolocation.getCurrentPosition(p => {
+    apply({lat: +p.coords.latitude.toFixed(5), lon: +p.coords.longitude.toFixed(5), acc: Math.round(p.coords.accuracy)});
+    commit();
+    const ae = document.activeElement;
+    if (!ui.form && ui.tab !== "setup" && !(ae && ae.matches && ae.matches("input,select"))) render();
+  }, () => {}, {enableHighAccuracy:true, timeout:15000, maximumAge:30000});
+}
+const locLink = l => '<a href="https://maps.apple.com/?q=' + l.lat + "," + l.lon + '">' + l.lat + ", " + l.lon + "</a>";
+function backupNudge(){
+  if (!S.shifts.length) return "";
+  const last = S.meta.lastBackup, days = last ? Math.round((new Date(localDate() + "T12:00:00") - new Date(last + "T12:00:00")) / 864e5) : null;
+  if (days !== null && days < 30) return "";
+  return '<p class="warn">' + (last ? "Your last backup was " + days + " days ago." : "This log has never been backed up.") + " It exists only on this phone. Save a backup file on the Setup tab.</p>";
+}
+
+/* ---------- view pieces ---------- */
+function chips(sel){
+  return '<div class="chips" role="group" aria-label="Which service">' + S.meta.services.filter(s => !s.gone || sel.includes(s.id)).map(s =>
+    '<button type="button" class="chip" data-act="chip" data-id="' + s.id + '" aria-pressed="' + sel.includes(s.id) + '"><i style="background:' + svcColor(s.id) + '"></i>' + esc(s.name) + "</button>").join("") + "</div>";
+}
+const readChips = root => [...root.querySelectorAll('.chip[aria-pressed="true"]')].map(b => b.dataset.id);
+function odoPlate(n){
+  const t = Math.round(n * 10), whole = String(Math.floor(t / 10)).padStart(6, "0");
+  return '<div class="odo" role="img" aria-label="Odometer ' + n.toFixed(1) + '">' + [...whole].map(d => "<span>" + d + "</span>").join("") + '<span class="tenth">' + (t % 10) + "</span></div>";
+}
+function yearStrip(){
+  const y = String(new Date().getFullYear()), t = totals(y);
+  return '<section class="card"><h3>' + y + ' so far</h3><div class="figs">' +
+    '<div class="fig"><b>' + fmtMi(t.mi) + '</b><span>business miles</span></div>' +
+    '<div class="fig"><b>' + fmtUsd(t.ded) + '</b><span>mileage deduction</span></div>' +
+    '<div class="fig"><b>' + t.list.length + '</b><span>shifts logged</span></div></div></section>';
+}
+
+function viewShift(){
+  const a = S.meta.active, h = S.meta.home;
+  let html = "";
+  if (a){
+    const started = new Date(a.start);
+    html += '<form class="card" id="end-form" novalidate><h2>Shift in progress</h2>' + odoPlate(a.odo) +
+      '<p class="note">Started ' + fmtDay(localDate(started)) + " at " + fmtTime(hhmm(started)) + " for " + esc(a.services.map(svcName).join(" + ")) +
+      (a.home ? ". Home miles will be added" : "") + '.</p>' +
+      (a.loc0 ? '<p class="note">Start location: ' + locLink(a.loc0) + "</p>" : "") +
+      '<label for="end-odo">Odometer now<input class="big" id="end-odo" inputmode="decimal" autocomplete="off" placeholder="' + a.odo + '"></label>' +
+      '<p class="live" id="live-miles">Enter the reading to see miles driven</p>' +
+      '<div class="grid2"><label for="end-earn">Earnings, optional<input id="end-earn" inputmode="decimal" autocomplete="off" placeholder="$"></label>' +
+      '<label for="end-note">Note, optional<input id="end-note" autocomplete="off" placeholder="Zone, weather"></label></div>' +
+      '<p class="err" id="end-err" role="alert"></p>' +
+      '<button class="btn" type="submit">End shift and log it</button>' +
+      (ui.discard
+        ? '<div class="row"><span class="note">Throw away this shift without logging it?</span><button type="button" class="btn small danger" data-act="discard-yes">Discard</button><button type="button" class="btn small ghost" data-act="discard-no">Keep it</button></div>'
+        : '<button type="button" class="link" data-act="discard">Discard this shift</button>') +
+      "</form>";
+  } else {
+    const last = S.shifts.length ? [...S.shifts].sort((x, y) => (x.date + (x.t0 || "")).localeCompare(y.date + (y.t0 || ""))).pop().services : [];
+    html += '<form class="card" id="start-form" novalidate><h2>Start a shift</h2>' +
+      '<div><h3 style="margin-bottom:8px">Driving for</h3>' + chips(last) + '<p class="note" style="margin-top:8px">Pick two if you are running both at once. Miles are split evenly between them.</p></div>' +
+      '<label for="start-odo">Odometer at start<input class="big" id="start-odo" inputmode="decimal" autocomplete="off" value="' + (S.meta.lastOdo ?? "") + '" placeholder="48210.4"></label>' +
+      (h.on ? '<label class="check" for="start-home"><input type="checkbox" id="start-home" checked>Add ' + fmtMi(h.miles) + ' home miles to this shift</label>' : "") +
+      '<p class="err" id="start-err" role="alert"></p>' +
+      '<button class="btn" type="submit">Start shift</button>' +
+      '<button type="button" class="link" data-act="new">Forgot to log one? Add a past shift</button></form>';
+  }
+  return html + yearStrip() + backupNudge();
+}
+
+function formHtml(){
+  const f = ui.form, s = f.id ? S.shifts.find(x => x.id === f.id) : null, h = S.meta.home;
+  const hasOdo = s ? s.odo0 != null : true, showHome = h.on || (s && s.homeMiles > 0);
+  return '<form class="card" id="shift-form" novalidate><h2>' + (s ? "Edit shift" : "Add a past shift") + "</h2>" +
+    '<label for="f-date">Date<input type="date" id="f-date" value="' + (s ? s.date : localDate()) + '" max="' + localDate() + '"></label>' +
+    '<div><h3 style="margin-bottom:8px">Driving for</h3>' + chips(s ? s.services : []) + "</div>" +
+    '<div class="row"><label class="check" for="f-mode-odo"><input type="radio" name="f-mode" id="f-mode-odo" value="odo"' + (hasOdo ? " checked" : "") + '>Odometer readings</label>' +
+    '<label class="check" for="f-mode-mi"><input type="radio" name="f-mode" id="f-mode-mi" value="miles"' + (hasOdo ? "" : " checked") + ">Miles only</label></div>" +
+    '<div class="grid2' + (hasOdo ? "" : " hide") + '" id="f-odo-fields"><label for="f-odo0">Start odometer<input id="f-odo0" inputmode="decimal" autocomplete="off" value="' + (s && s.odo0 != null ? s.odo0 : "") + '"></label>' +
+    '<label for="f-odo1">End odometer<input id="f-odo1" inputmode="decimal" autocomplete="off" value="' + (s && s.odo1 != null ? s.odo1 : "") + '"></label></div>' +
+    '<label for="f-miles" id="f-miles-field" class="' + (hasOdo ? "hide" : "") + '">Miles driven<input id="f-miles" inputmode="decimal" autocomplete="off" value="' + (s && !hasOdo ? s.miles : "") + '"></label>' +
+    (showHome ? '<label class="check" for="f-home"><input type="checkbox" id="f-home"' + (s ? (s.homeMiles > 0 ? " checked" : "") : " checked") + ">Add " + fmtMi(s && s.homeMiles > 0 ? s.homeMiles : h.miles) + " home miles</label>" : "") +
+    '<div class="grid2"><label for="f-earn">Earnings, optional<input id="f-earn" inputmode="decimal" autocomplete="off" value="' + (s && s.earn ? s.earn : "") + '" placeholder="$"></label>' +
+    '<label for="f-note">Note, optional<input id="f-note" autocomplete="off" value="' + esc(s ? s.note : "") + '"></label></div>' +
+    '<p class="err" id="f-err" role="alert"></p>' +
+    '<div class="row"><button class="btn" type="submit">' + (s ? "Save changes" : "Add to log") + '</button><button type="button" class="btn ghost" data-act="cancel-form">Cancel</button></div></form>';
+}
+
+function viewLog(){
+  const list = [...S.shifts].sort((a, b) => (b.date + (b.t0 || "")).localeCompare(a.date + (a.t0 || "")));
+  let html = ui.form ? formHtml() : '<div class="row between"><h2>Shift log</h2><button class="btn small" data-act="new">Add a past shift</button></div>';
+  if (!list.length) return html + '<p class="empty">No shifts logged yet. Start one on the Shift tab, or add a past shift here.</p>';
+  html += '<section class="card" style="gap:0;padding-top:4px">';
+  let month = "";
+  for (const s of list){
+    const ym = s.date.slice(0, 7);
+    if (ym !== month){
+      if (month) html += "</ul>";
+      month = ym;
+      const mt = list.filter(x => x.date.startsWith(ym)).reduce((n, x) => n + tot(x), 0);
+      html += '<div class="month"><h3>' + fmtMonth(ym) + "</h3><span class=\"note\">" + fmtMi(mt) + " mi</span></div><ul>";
+    }
+    const t = tot(s), times = s.t0 ? fmtTime(s.t0) + (s.t1 ? " to " + fmtTime(s.t1) : "") : "Entered by hand";
+    const detail = (s.odo0 != null ? "Odometer " + s.odo0 + " to " + s.odo1 : "Miles only") + (s.homeMiles ? ", plus " + fmtMi(s.homeMiles) + " home" : "") + (s.earn ? ", earned " + fmtUsd(s.earn) : "") + (s.note ? ". " + esc(s.note) : "");
+    html += '<li class="shift"><div class="when"><b>' + fmtDay(s.date) + '</b><div class="sub">' + esc(s.services.map(svcName).join(" + ")) + " · " + times + '</div><div class="sub">' + detail + "</div>" +
+      (s.loc0 || s.loc1 ? '<div class="sub">' + (s.loc0 ? "Start " + locLink(s.loc0) : "") + (s.loc0 && s.loc1 ? " \u00B7 " : "") + (s.loc1 ? "End " + locLink(s.loc1) : "") + "</div>" : "") + "</div>" +
+      '<div class="num"><b>' + fmtMi(t) + ' mi</b><div class="sub">' + fmtUsd(t * rateFor(s.date)) + "</div></div>" +
+      '<div class="acts">' + (ui.confirm === s.id
+        ? '<span class="note">Delete this shift?</span><button class="btn small danger" data-act="del-yes" data-id="' + s.id + '">Delete</button><button class="btn small ghost" data-act="del-no">Keep</button>'
+        : '<button class="link" data-act="edit" data-id="' + s.id + '">Edit</button><button class="link" data-act="del" data-id="' + s.id + '">Delete</button>') +
+      "</div></li>";
+  }
+  return html + "</ul></section>";
+}
+
+function viewTotals(){
+  const years = [...new Set([...S.meta.logYears, String(new Date().getFullYear()), ui.year])].sort().reverse();
+  const y = ui.year, t = totals(y), yr = S.meta.years[y] || {};
+  let html = '<div class="row between"><h2>Totals for tax time</h2><label for="year" style="flex-direction:row;align-items:center;gap:8px">Year<select id="year" style="width:auto">' + years.map(v => '<option' + (v === y ? " selected" : "") + ">" + v + "</option>").join("") + "</select></label></div>";
+  html += '<section class="card"><div class="figs"><div class="fig"><b>' + fmtMi(t.mi) + '</b><span>business miles</span></div><div class="fig"><b>' + fmtUsd(t.ded) + '</b><span>deduction at standard rate</span></div><div class="fig"><b>' + (t.earn ? fmtUsd(t.earn) : "—") + "</b><span>earnings entered</span></div></div>";
+  const rk = Object.keys(t.rates).sort();
+  if (rk.length) html += "<div>" + rk.map(r => '<div class="kv"><span>' + fmtMi(t.rates[r]) + " mi at " + fmtRate(Number(r)) + "</span><span>" + fmtUsd(t.rates[r] * r) + "</span></div>").join("") + "</div>";
+  if (Number(y) > LAST_RATE_YEAR) html += '<p class="warn">This prototype has no IRS rate for ' + y + " yet. It is using " + fmtRate(RATES[RATES.length - 1][1]) + " until that rate is added.</p>";
+  else if (y === "2026") html += '<p class="note">The 2026 rate changed mid-year: 72.5¢ through June 30, 76¢ from July 1. Each shift uses the rate for its date.</p>';
+  html += "</section>";
+
+  html += '<section class="card" style="gap:4px"><h3>By service</h3>';
+  const ids = Object.keys(t.by).sort((a, b) => t.by[b].mi - t.by[a].mi), max = ids.length ? t.by[ids[0]].mi : 0;
+  if (!ids.length) html += '<p class="empty">Nothing logged for ' + y + " yet.</p>";
+  for (const id of ids){
+    const b = t.by[id];
+    html += '<div class="svc"><span class="name"><i style="background:' + svcColor(id) + '"></i>' + esc(svcName(id)) + "</span><b>" + fmtMi(b.mi) + " mi</b>" +
+      '<div class="bar"><i style="width:' + (max ? Math.max(2, b.mi / max * 100) : 0) + "%;background:" + svcColor(id) + '"></i></div>' +
+      '<span class="sub">' + fmtUsd(b.ded) + " deduction · " + b.n + (b.n === 1 ? " shift" : " shifts") + (b.earn ? " · " + fmtUsd(b.earn) + " earned, " + fmtUsd(b.earn / b.mi) + " per mile" : "") + "</span></div>";
+  }
+  html += "</section>";
+
+  const o0 = Number(yr.o0), o1 = Number(yr.o1), all = o1 - o0;
+  html += '<section class="card"><h3>Whole-year odometer</h3><p class="note">Record the reading on January 1 and December 31. Your tax preparer will want total miles for the year and the share that was business.</p>' +
+    '<div class="grid2"><label for="yr-o0">Start of ' + y + '<input id="yr-o0" inputmode="decimal" autocomplete="off" value="' + (yr.o0 ?? "") + '"></label><label for="yr-o1">End of ' + y + '<input id="yr-o1" inputmode="decimal" autocomplete="off" value="' + (yr.o1 ?? "") + '"></label></div>' +
+    (yr.o0 != null && yr.o1 != null && all > 0 ? '<div><div class="kv"><span>Total miles on the vehicle</span><span>' + fmtMi(all) + '</span></div><div class="kv"><span>Business share</span><span>' + Math.min(100, t.mi / all * 100).toFixed(1) + "%</span></div></div>" : "") + "</section>";
+
+  html += '<section class="card"><h3>Export ' + y + '</h3><p class="note">One row per shift with date, services, odometer readings, miles, rate, deduction and location stamps.</p><div class="row">' +
+    '<button class="btn" data-act="csv">Save CSV</button>' + '<button class="btn ghost" data-act="copy">Copy as CSV</button></div><p class="note" id="export-msg" role="status"></p></section>';
+  return html;
+}
+
+function viewSetup(){
+  const h = S.meta.home;
+  return '<h2>Setup</h2><section class="card"><h3>Services you drive for</h3><div>' +
+    S.meta.services.filter(s => !s.gone).map(s => '<div class="kv"><span><i style="display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px;background:' + svcColor(s.id) + '"></i>' + esc(s.name) + '</span><button class="link" data-act="svc-del" data-id="' + s.id + '">Remove</button></div>').join("") +
+    '</div><form class="row" id="svc-form" novalidate><input id="svc-name" autocomplete="off" placeholder="Add a service, such as Shipt" style="flex:1 1 180px" maxlength="30"><button class="btn small" type="submit">Add</button></form></section>' +
+    '<section class="card"><h3>Home office miles</h3><label class="check" for="home-on"><input type="checkbox" id="home-on"' + (h.on ? " checked" : "") + '>Offer to add home miles to each shift</label>' +
+    '<label for="home-mi">Round trip from home to where you start working, in miles<input id="home-mi" inputmode="decimal" autocomplete="off" value="' + (h.miles || "") + '"></label>' +
+    '<p class="warn">Driving between home and work is normally commuting, which is not deductible. It can count only if your home office is your principal place of business. Check with a tax professional before turning this on. Leave it off if your start odometer reading is taken at home, or those miles are counted twice.</p></section>' +
+    '<section class="card"><h3>Location</h3><label class="check" for="gps-on"><input type="checkbox" id="gps-on"' + (S.meta.gps ? " checked" : "") + '>Stamp my location when a shift starts and ends</label>' +
+    '<p class="note">Your phone asks for permission the first time. The app has to be open on screen to get a fix, so it cannot follow your route in the background.</p></section>' +
+    '<section class="card"><h3>Backup</h3><p class="note">Your log is kept in this app on this phone and nowhere else. Clearing website data or removing the app from your home screen erases it. ' +
+    (S.meta.lastBackup ? "Last backup: " + fmtDay(S.meta.lastBackup) + "." : "You have not made a backup yet.") + "</p>" +
+    (ui.restore
+      ? '<div class="row"><span class="note">Replace the ' + S.shifts.length + " shifts on this phone with the " + ui.restore.shifts.length + ' in that backup?</span><button class="btn small danger" data-act="restore-yes">Replace</button><button class="btn small ghost" data-act="restore-no">Cancel</button></div>'
+      : '<div class="row"><button class="btn" data-act="backup">Save a backup file</button><label class="btn ghost" for="restore" style="position:relative;flex-direction:row">Restore from a backup<input type="file" id="restore" accept=".json,application/json" style="position:absolute;opacity:0;width:1px;height:1px;padding:0;border:0"></label></div>') +
+    '<p class="note" id="backup-msg" role="status"></p></section>';
+}
+
+function render(){
+  document.querySelectorAll("nav button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === ui.tab)));
+  $("#main").innerHTML = ui.tab === "shift" ? viewShift() : ui.tab === "log" ? viewLog() : ui.tab === "totals" ? viewTotals() : viewSetup();
+  paintStatus();
+}
+
+/* ---------- actions ---------- */
+function csvFor(y){
+  const q = v => { v = String(v ?? ""); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  const rows = [["Date","Start time","End time","Services","Odometer start","Odometer end","Miles driven","Home miles","Total miles","Rate per mile","Deduction","Earnings","Note","Start lat","Start lon","End lat","End lon"]];
+  totals(y).list.sort((a, b) => (a.date + (a.t0 || "")).localeCompare(b.date + (b.t0 || ""))).forEach(s => {
+    const t = tot(s), r = rateFor(s.date);
+    rows.push([s.date, s.t0 || "", s.t1 || "", s.services.map(svcName).join(" + "), s.odo0 ?? "", s.odo1 ?? "", s.miles, s.homeMiles || 0, r1(t), r, (t * r).toFixed(2), s.earn || "", s.note || "", s.loc0 ? s.loc0.lat : "", s.loc0 ? s.loc0.lon : "", s.loc1 ? s.loc1.lat : "", s.loc1 ? s.loc1.lon : ""]);
+  });
+  return rows.map(r => r.map(q).join(",")).join("\r\n") + "\r\n";
+}
+function setErr(sel, msg){ const el = $(sel); if (el) el.textContent = msg; return false; }
+
+document.addEventListener("click", async e => {
+  const tab = e.target.closest("nav button");
+  if (tab){ ui.tab = tab.dataset.tab; ui.form = null; ui.confirm = null; ui.discard = false; render(); return; }
+  const b = e.target.closest("[data-act]"); if (!b) return;
+  const act = b.dataset.act, id = b.dataset.id;
+  if (act === "chip"){ b.setAttribute("aria-pressed", String(b.getAttribute("aria-pressed") !== "true")); return; }
+  if (act === "new"){ ui.tab = "log"; ui.form = {id:null}; render(); window.scrollTo(0, 0); return; }
+  if (act === "edit"){ ui.form = {id}; ui.confirm = null; render(); window.scrollTo(0, 0); return; }
+  if (act === "cancel-form"){ ui.form = null; render(); return; }
+  if (act === "del"){ ui.confirm = id; render(); return; }
+  if (act === "del-no"){ ui.confirm = null; render(); return; }
+  if (act === "del-yes"){
+    const s = S.shifts.find(x => x.id === id); if (!s) return;
+    S.shifts = S.shifts.filter(x => x.id !== id); ui.confirm = null; commit([s.date.slice(0, 4)]); render(); return;
+  }
+  if (act === "discard"){ ui.discard = true; render(); return; }
+  if (act === "discard-no"){ ui.discard = false; render(); return; }
+  if (act === "discard-yes"){ S.meta.active = null; ui.discard = false; commit(); render(); return; }
+  if (act === "svc-del"){
+    const used = S.shifts.some(s => s.services.includes(id)) || (S.meta.active && S.meta.active.services.includes(id));
+    if (used) S.meta.services.find(s => s.id === id).gone = true; else S.meta.services = S.meta.services.filter(s => s.id !== id);
+    commit(); render(); return;
+  }
+  if (act === "backup"){
+    try { await saveFile("shift-miles-backup-" + localDate() + ".json", JSON.stringify({app:"shift-miles", v:1, S}), "application/json"); S.meta.lastBackup = localDate(); commit(); render(); }
+    catch(err){ $("#backup-msg").textContent = err && err.name === "AbortError" ? "Backup cancelled." : "The backup did not save. Open the app in Safari and try again."; }
+    return;
+  }
+  if (act === "restore-no"){ ui.restore = null; render(); return; }
+  if (act === "restore-yes"){ S = ui.restore; ui.restore = null; commit(); render(); return; }
+  if (act === "csv" || act === "copy"){
+    const msg = $("#export-msg"), data = csvFor(ui.year);
+    if (!totals(ui.year).list.length){ msg.textContent = "There are no shifts in " + ui.year + " to export."; return; }
+    try {
+      if (act === "csv"){ await saveFile("shift-miles-" + ui.year + ".csv", data, "text/csv"); msg.textContent = "Done. Pick Save to Files in the share sheet to keep it on your phone."; }
+      else { await navigator.clipboard.writeText(data); msg.textContent = "Copied. Paste it into a spreadsheet or a note."; }
+    } catch(err){
+      msg.textContent = act === "csv" ? (err && err.name === "AbortError" ? "Cancelled." : "The file did not save. Try Copy as CSV instead.") : "Copying was blocked here. Try Save CSV instead.";
+    }
+  }
+});
+
+document.addEventListener("submit", e => {
+  e.preventDefault();
+  const f = e.target;
+  if (f.id === "start-form"){
+    const odo = numVal("#start-odo"), svcs = readChips(f);
+    if (!svcs.length) return setErr("#start-err", "Pick the service you are driving for.");
+    if (!(odo >= 0)) return setErr("#start-err", "Enter your odometer reading as a number, such as 48210.4.");
+    const hb = $("#start-home");
+    const st0 = Date.now();
+    S.meta.active = {start: st0, odo, services: svcs, home: !!(hb && hb.checked), loc0: null};
+    commit(); render();
+    stampLocation(loc => { if (S.meta.active && S.meta.active.start === st0) S.meta.active.loc0 = loc; });
+  } else if (f.id === "end-form"){
+    const a = S.meta.active, odo1 = numVal("#end-odo"), earn = numVal("#end-earn");
+    if (!(odo1 >= a.odo)) return setErr("#end-err", "The reading must be a number at or above your start of " + a.odo + ".");
+    if ($("#end-earn").value.trim() !== "" && !(earn >= 0)) return setErr("#end-err", "Enter earnings as a number, or leave it blank.");
+    const st = new Date(a.start), date = localDate(st);
+    const sid = newId();
+    S.shifts.push({id:sid, loc0: a.loc0 || null, loc1: null, date, t0:hhmm(st), t1:hhmm(), odo0:a.odo, odo1, miles:r1(odo1 - a.odo), homeMiles: a.home ? S.meta.home.miles : 0, services:a.services, earn: earn > 0 ? earn : 0, note: $("#end-note").value.trim()});
+    S.meta.active = null; S.meta.lastOdo = odo1;
+    commit(); render();
+    stampLocation(loc => { const s = S.shifts.find(x => x.id === sid); if (s) s.loc1 = loc; });
+  } else if (f.id === "shift-form"){
+    const old = ui.form.id ? S.shifts.find(x => x.id === ui.form.id) : null;
+    const date = $("#f-date").value, svcs = readChips(f), byOdo = $("#f-mode-odo").checked, earn = numVal("#f-earn");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return setErr("#f-err", "Pick the date of the shift.");
+    if (date > localDate()) return setErr("#f-err", "The date cannot be in the future.");
+    if (!svcs.length) return setErr("#f-err", "Pick the service you drove for.");
+    let odo0 = null, odo1 = null, miles;
+    if (byOdo){
+      odo0 = numVal("#f-odo0"); odo1 = numVal("#f-odo1");
+      if (!(odo0 >= 0) || !(odo1 >= odo0)) return setErr("#f-err", "Enter both readings as numbers, with the end at or above the start.");
+      miles = r1(odo1 - odo0);
+    } else {
+      miles = numVal("#f-miles");
+      if (!(miles > 0)) return setErr("#f-err", "Enter the miles driven as a number above zero.");
+      miles = r1(miles);
+    }
+    if ($("#f-earn").value.trim() !== "" && !(earn >= 0)) return setErr("#f-err", "Enter earnings as a number, or leave it blank.");
+    const hb = $("#f-home"), homeMiles = hb && hb.checked ? (old && old.homeMiles > 0 ? old.homeMiles : S.meta.home.miles) : 0;
+    const rec = {id: old ? old.id : newId(), loc0: old ? old.loc0 || null : null, loc1: old ? old.loc1 || null : null, date, t0: old ? old.t0 || null : null, t1: old ? old.t1 || null : null, odo0, odo1, miles, homeMiles, services: svcs, earn: earn > 0 ? earn : 0, note: $("#f-note").value.trim()};
+    const years = [date.slice(0, 4)];
+    if (old){ years.push(old.date.slice(0, 4)); S.shifts = S.shifts.map(x => x.id === old.id ? rec : x); } else S.shifts.push(rec);
+    if (odo1 != null && (S.meta.lastOdo == null || odo1 > S.meta.lastOdo)) S.meta.lastOdo = odo1;
+    ui.form = null; commit([...new Set(years)]); render();
+  } else if (f.id === "svc-form"){
+    const name = $("#svc-name").value.trim(); if (!name) return;
+    const hit = S.meta.services.find(s => s.name.toLowerCase() === name.toLowerCase());
+    if (hit) hit.gone = false; else S.meta.services.push({id: "s" + newId(), name});
+    commit(); render();
+  }
+});
+
+document.addEventListener("input", e => {
+  if (e.target.id === "end-odo"){
+    const a = S.meta.active, v = parseFloat(e.target.value), el = $("#live-miles");
+    if (!(v >= a.odo)) el.textContent = e.target.value.trim() ? "That is below your start reading" : "Enter the reading to see miles driven";
+    else { const mi = r1(v - a.odo) + (a.home ? S.meta.home.miles : 0); el.textContent = fmtMi(mi) + " miles · " + fmtUsd(mi * rateFor(localDate(new Date(a.start)))) + " deduction"; }
+  }
+});
+
+document.addEventListener("change", e => {
+  const t = e.target;
+  if (t.name === "f-mode"){ const odo = $("#f-mode-odo").checked; $("#f-odo-fields").classList.toggle("hide", !odo); $("#f-miles-field").classList.toggle("hide", odo); }
+  else if (t.id === "year"){ ui.year = t.value; render(); }
+  else if (t.id === "home-on"){ S.meta.home.on = t.checked; commit(); }
+  else if (t.id === "home-mi"){ const v = parseFloat(t.value); S.meta.home.miles = v > 0 ? r1(v) : 0; commit(); }
+  else if (t.id === "gps-on"){ S.meta.gps = t.checked; commit(); }
+  else if (t.id === "restore"){
+    const file = t.files && t.files[0]; if (!file) return;
+    file.text().then(txt => {
+      const raw = JSON.parse(txt);
+      if (!raw || raw.app !== "shift-miles" || !raw.S || !Array.isArray(raw.S.shifts)) throw new Error("format");
+      const next = {meta: fixMeta(raw.S.meta), shifts: raw.S.shifts};
+      if (S.shifts.length){ ui.restore = next; render(); } else { S = next; commit(); render(); }
+    }).catch(() => { const m = $("#backup-msg"); if (m) m.textContent = "That file is not a Shift Miles backup."; });
+  }
+  else if (t.id === "yr-o0" || t.id === "yr-o1"){
+    const yr = (S.meta.years[ui.year] = S.meta.years[ui.year] || {}), v = parseFloat(t.value), k = t.id === "yr-o0" ? "o0" : "o1";
+    if (v >= 0) yr[k] = v; else delete yr[k];
+    commit(); render();
+  }
+});
+
+/* ---------- start ---------- */
+loadLocal();
+render();
+if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+</script>
+</body>
+</html>
