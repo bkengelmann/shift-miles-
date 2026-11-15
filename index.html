@@ -216,6 +216,16 @@ function stampLocation(apply){
   }, () => {}, {enableHighAccuracy:true, timeout:15000, maximumAge:30000});
 }
 const locLink = l => '<a href="https://maps.apple.com/?q=' + l.lat + "," + l.lon + '">' + l.lat + ", " + l.lon + "</a>";
+function placeLine(s){
+  const one = (label, place, loc) => place || loc ? label + " " + [place ? esc(place) : "", loc ? locLink(loc) : ""].filter(Boolean).join(", ") : "";
+  const parts = [one("From", s.place0, s.loc0), one("To", s.place1, s.loc1)].filter(Boolean);
+  return parts.length ? '<div class="sub">' + parts.join(" · ") + "</div>" : "";
+}
+/* Places typed before, offered as suggestions in every location field. */
+function placesList(){
+  const seen = [...new Set(S.shifts.flatMap(s => [s.place0, s.place1]).filter(Boolean))].slice(-40);
+  return '<datalist id="places">' + seen.map(p => '<option value="' + esc(p) + '"></option>').join("") + "</datalist>";
+}
 function backupNudge(){
   if (!S.shifts.length) return "";
   const last = S.meta.lastBackup, days = last ? Math.round((new Date(localDate() + "T12:00:00") - new Date(last + "T12:00:00")) / 864e5) : null;
@@ -249,9 +259,10 @@ function viewShift(){
     html += '<form class="card" id="end-form" novalidate><h2>Shift in progress</h2>' + odoPlate(a.odo) +
       '<p class="note">Started ' + fmtDay(localDate(started)) + " at " + fmtTime(hhmm(started)) + " for " + esc(a.services.map(svcName).join(" + ")) +
       (a.home ? ". Home miles will be added" : "") + '.</p>' +
-      (a.loc0 ? '<p class="note">Start location: ' + locLink(a.loc0) + "</p>" : "") +
+      (a.place0 || a.loc0 ? '<p class="note">Started from ' + [a.place0 ? esc(a.place0) : "", a.loc0 ? locLink(a.loc0) : ""].filter(Boolean).join(", ") + "</p>" : "") +
       '<label for="end-odo">Odometer now<input class="big" id="end-odo" inputmode="decimal" autocomplete="off" placeholder="' + a.odo + '"></label>' +
       '<p class="live" id="live-miles">Enter the reading to see miles driven</p>' +
+      '<label for="end-place">Ending at, optional<input id="end-place" list="places" autocomplete="off" placeholder="Home, or last drop-off"></label>' +
       '<div class="grid2"><label for="end-earn">Earnings, optional<input id="end-earn" inputmode="decimal" autocomplete="off" placeholder="$"></label>' +
       '<label for="end-note">Note, optional<input id="end-note" autocomplete="off" placeholder="Zone, weather"></label></div>' +
       '<p class="err" id="end-err" role="alert"></p>' +
@@ -265,6 +276,7 @@ function viewShift(){
     html += '<form class="card" id="start-form" novalidate><h2>Start a shift</h2>' +
       '<div><h3 style="margin-bottom:8px">Driving for</h3>' + chips(last) + '<p class="note" style="margin-top:8px">Pick two if you are running both at once. Miles are split evenly between them.</p></div>' +
       '<label for="start-odo">Odometer at start<input class="big" id="start-odo" inputmode="decimal" autocomplete="off" value="' + (S.meta.lastOdo ?? "") + '" placeholder="48210.4"></label>' +
+      '<label for="start-place">Starting from, optional<input id="start-place" list="places" autocomplete="off" placeholder="Walmart on Louise Ave"></label>' +
       (h.on ? '<label class="check" for="start-home"><input type="checkbox" id="start-home" checked>Add ' + fmtMi(h.miles) + ' home miles to this shift</label>' : "") +
       '<p class="err" id="start-err" role="alert"></p>' +
       '<button class="btn" type="submit">Start shift</button>' +
@@ -285,6 +297,8 @@ function formHtml(){
     '<label for="f-odo1">End odometer<input id="f-odo1" inputmode="decimal" autocomplete="off" value="' + (s && s.odo1 != null ? s.odo1 : "") + '"></label></div>' +
     '<label for="f-miles" id="f-miles-field" class="' + (hasOdo ? "hide" : "") + '">Miles driven<input id="f-miles" inputmode="decimal" autocomplete="off" value="' + (s && !hasOdo ? s.miles : "") + '"></label>' +
     (showHome ? '<label class="check" for="f-home"><input type="checkbox" id="f-home"' + (s ? (s.homeMiles > 0 ? " checked" : "") : " checked") + ">Add " + fmtMi(s && s.homeMiles > 0 ? s.homeMiles : h.miles) + " home miles</label>" : "") +
+    '<div class="grid2"><label for="f-place0">Started from, optional<input id="f-place0" list="places" autocomplete="off" value="' + esc(s ? s.place0 : "") + '"></label>' +
+    '<label for="f-place1">Ended at, optional<input id="f-place1" list="places" autocomplete="off" value="' + esc(s ? s.place1 : "") + '"></label></div>' +
     '<div class="grid2"><label for="f-earn">Earnings, optional<input id="f-earn" inputmode="decimal" autocomplete="off" value="' + (s && s.earn ? s.earn : "") + '" placeholder="$"></label>' +
     '<label for="f-note">Note, optional<input id="f-note" autocomplete="off" value="' + esc(s ? s.note : "") + '"></label></div>' +
     '<p class="err" id="f-err" role="alert"></p>' +
@@ -308,7 +322,7 @@ function viewLog(){
     const t = tot(s), times = s.t0 ? fmtTime(s.t0) + (s.t1 ? " to " + fmtTime(s.t1) : "") : "Entered by hand";
     const detail = (s.odo0 != null ? "Odometer " + s.odo0 + " to " + s.odo1 : "Miles only") + (s.homeMiles ? ", plus " + fmtMi(s.homeMiles) + " home" : "") + (s.earn ? ", earned " + fmtUsd(s.earn) : "") + (s.note ? ". " + esc(s.note) : "");
     html += '<li class="shift"><div class="when"><b>' + fmtDay(s.date) + '</b><div class="sub">' + esc(s.services.map(svcName).join(" + ")) + " · " + times + '</div><div class="sub">' + detail + "</div>" +
-      (s.loc0 || s.loc1 ? '<div class="sub">' + (s.loc0 ? "Start " + locLink(s.loc0) : "") + (s.loc0 && s.loc1 ? " \u00B7 " : "") + (s.loc1 ? "End " + locLink(s.loc1) : "") + "</div>" : "") + "</div>" +
+      placeLine(s) + "</div>" +
       '<div class="num"><b>' + fmtMi(t) + ' mi</b><div class="sub">' + fmtUsd(t * rateFor(s.date)) + "</div></div>" +
       '<div class="acts">' + (ui.confirm === s.id
         ? '<span class="note">Delete this shift?</span><button class="btn small danger" data-act="del-yes" data-id="' + s.id + '">Delete</button><button class="btn small ghost" data-act="del-no">Keep</button>'
@@ -370,17 +384,17 @@ function viewSetup(){
 
 function render(){
   document.querySelectorAll("nav button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === ui.tab)));
-  $("#main").innerHTML = ui.tab === "shift" ? viewShift() : ui.tab === "log" ? viewLog() : ui.tab === "totals" ? viewTotals() : viewSetup();
+  $("#main").innerHTML = (ui.tab === "shift" ? viewShift() : ui.tab === "log" ? viewLog() : ui.tab === "totals" ? viewTotals() : viewSetup()) + placesList();
   paintStatus();
 }
 
 /* ---------- actions ---------- */
 function csvFor(y){
   const q = v => { v = String(v ?? ""); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
-  const rows = [["Date","Start time","End time","Services","Odometer start","Odometer end","Miles driven","Home miles","Total miles","Rate per mile","Deduction","Earnings","Note","Start lat","Start lon","End lat","End lon"]];
+  const rows = [["Date","Start time","End time","Services","Odometer start","Odometer end","Miles driven","Home miles","Total miles","Rate per mile","Deduction","Earnings","Note","Start place","End place","Start lat","Start lon","End lat","End lon"]];
   totals(y).list.sort((a, b) => (a.date + (a.t0 || "")).localeCompare(b.date + (b.t0 || ""))).forEach(s => {
     const t = tot(s), r = rateFor(s.date);
-    rows.push([s.date, s.t0 || "", s.t1 || "", s.services.map(svcName).join(" + "), s.odo0 ?? "", s.odo1 ?? "", s.miles, s.homeMiles || 0, r1(t), r, (t * r).toFixed(2), s.earn || "", s.note || "", s.loc0 ? s.loc0.lat : "", s.loc0 ? s.loc0.lon : "", s.loc1 ? s.loc1.lat : "", s.loc1 ? s.loc1.lon : ""]);
+    rows.push([s.date, s.t0 || "", s.t1 || "", s.services.map(svcName).join(" + "), s.odo0 ?? "", s.odo1 ?? "", s.miles, s.homeMiles || 0, r1(t), r, (t * r).toFixed(2), s.earn || "", s.note || "", s.place0 || "", s.place1 || "", s.loc0 ? s.loc0.lat : "", s.loc0 ? s.loc0.lon : "", s.loc1 ? s.loc1.lat : "", s.loc1 ? s.loc1.lon : ""]);
   });
   return rows.map(r => r.map(q).join(",")).join("\r\n") + "\r\n";
 }
@@ -437,7 +451,7 @@ document.addEventListener("submit", e => {
     if (!(odo >= 0)) return setErr("#start-err", "Enter your odometer reading as a number, such as 48210.4.");
     const hb = $("#start-home");
     const st0 = Date.now();
-    S.meta.active = {start: st0, odo, services: svcs, home: !!(hb && hb.checked), loc0: null};
+    S.meta.active = {start: st0, odo, services: svcs, home: !!(hb && hb.checked), loc0: null, place0: $("#start-place").value.trim()};
     commit(); render();
     stampLocation(loc => { if (S.meta.active && S.meta.active.start === st0) S.meta.active.loc0 = loc; });
   } else if (f.id === "end-form"){
@@ -446,7 +460,7 @@ document.addEventListener("submit", e => {
     if ($("#end-earn").value.trim() !== "" && !(earn >= 0)) return setErr("#end-err", "Enter earnings as a number, or leave it blank.");
     const st = new Date(a.start), date = localDate(st);
     const sid = newId();
-    S.shifts.push({id:sid, loc0: a.loc0 || null, loc1: null, date, t0:hhmm(st), t1:hhmm(), odo0:a.odo, odo1, miles:r1(odo1 - a.odo), homeMiles: a.home ? S.meta.home.miles : 0, services:a.services, earn: earn > 0 ? earn : 0, note: $("#end-note").value.trim()});
+    S.shifts.push({id:sid, loc0: a.loc0 || null, loc1: null, place0: a.place0 || "", place1: $("#end-place").value.trim(), date, t0:hhmm(st), t1:hhmm(), odo0:a.odo, odo1, miles:r1(odo1 - a.odo), homeMiles: a.home ? S.meta.home.miles : 0, services:a.services, earn: earn > 0 ? earn : 0, note: $("#end-note").value.trim()});
     S.meta.active = null; S.meta.lastOdo = odo1;
     commit(); render();
     stampLocation(loc => { const s = S.shifts.find(x => x.id === sid); if (s) s.loc1 = loc; });
@@ -468,7 +482,7 @@ document.addEventListener("submit", e => {
     }
     if ($("#f-earn").value.trim() !== "" && !(earn >= 0)) return setErr("#f-err", "Enter earnings as a number, or leave it blank.");
     const hb = $("#f-home"), homeMiles = hb && hb.checked ? (old && old.homeMiles > 0 ? old.homeMiles : S.meta.home.miles) : 0;
-    const rec = {id: old ? old.id : newId(), loc0: old ? old.loc0 || null : null, loc1: old ? old.loc1 || null : null, date, t0: old ? old.t0 || null : null, t1: old ? old.t1 || null : null, odo0, odo1, miles, homeMiles, services: svcs, earn: earn > 0 ? earn : 0, note: $("#f-note").value.trim()};
+    const rec = {id: old ? old.id : newId(), loc0: old ? old.loc0 || null : null, loc1: old ? old.loc1 || null : null, place0: $("#f-place0").value.trim(), place1: $("#f-place1").value.trim(), date, t0: old ? old.t0 || null : null, t1: old ? old.t1 || null : null, odo0, odo1, miles, homeMiles, services: svcs, earn: earn > 0 ? earn : 0, note: $("#f-note").value.trim()};
     const years = [date.slice(0, 4)];
     if (old){ years.push(old.date.slice(0, 4)); S.shifts = S.shifts.map(x => x.id === old.id ? rec : x); } else S.shifts.push(rec);
     if (odo1 != null && (S.meta.lastOdo == null || odo1 > S.meta.lastOdo)) S.meta.lastOdo = odo1;
