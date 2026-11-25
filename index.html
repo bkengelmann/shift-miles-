@@ -343,6 +343,23 @@ function yearStrip(){
     '<div class="fig"><b>' + t.list.length + '</b><span>shifts logged</span></div></div></section>';
 }
 const homeWord = () => S.meta.commute === "sub" ? "Subtract home miles from this shift" : "Add home miles to this shift";
+const lastShift = () => S.shifts.length ? [...S.shifts].sort((x, y) => sortKey(x).localeCompare(sortKey(y))).pop() : null;
+const startMsOf = s => s.startMs || new Date(s.date + "T" + (s.t0 || "12:00") + ":00").getTime();
+function endMsOf(s){
+  if (!s.t1) return 0;
+  let e = new Date(s.date + "T" + s.t1 + ":00").getTime();
+  if (e < startMsOf(s)) e += 864e5;
+  return e;
+}
+/* Take a logged shift back off the log and make it the shift in progress again. */
+function reopen(id){
+  const s = S.shifts.find(x => x.id === id); if (!s || s.odo0 == null || S.meta.active) return;
+  S.shifts = S.shifts.filter(x => x.id !== id);
+  const veh = vehOf(s);
+  S.meta.active = {start: startMsOf(s), odo: s.odo0, services: s.services, veh, home: !!s.homeAuto, loc0: s.loc0 || null, place0: s.place0 || "", orig: s};
+  if (liveVehicles().some(v => v.id === veh)) S.meta.vehicle = veh;
+  ui.lowOk = null; commit();
+}
 const msg = k => '<p class="note" id="' + k + '-msg" role="status">' + esc(ui.note[k] || "") + "</p>";
 
 function viewShift(){
@@ -350,26 +367,34 @@ function viewShift(){
   let html = "";
   if (a){
     const started = new Date(a.start), hours = (Date.now() - a.start) / 36e5;
-    html += '<form class="card" id="end-form" novalidate><h2>Shift in progress</h2>' +
-      (hours > 12 ? '<p class="warn">This shift has been open for ' + Math.round(hours) + " hours. If you forgot to end it, enter the reading from when you stopped, or discard it and add the shift by hand.</p>" : "") +
+    const o = a.orig;
+    html += '<form class="card" id="end-form" novalidate><h2>' + (o ? "Shift reopened" : "Shift in progress") + "</h2>" +
+      (o ? '<p class="warn">Previously ended at ' + o.odo1 + (o.t1 ? " at " + fmtTime(o.t1) : "") + (o.place1 ? ", " + esc(o.place1) : "") + ", " + fmtMi(tot(o)) + " mi. Enter the reading where you finish now. The end location is stamped again.</p>" : "") +
+      (hours > 12 && !o ? '<p class="warn">This shift has been open for ' + Math.round(hours) + " hours. If you forgot to end it, enter the reading from when you stopped, or discard it and add the shift by hand.</p>" : "") +
       odoPlate(a.odo) +
       '<p class="note">Started ' + fmtDay(localDate(started)) + " at " + fmtTime(hhmm(started)) + " for " + esc(a.services.map(svcName).join(" + ")) +
       (manyVehicles() ? " in " + esc(vehName(a.veh)) : "") + ".</p>" +
       (a.place0 || a.loc0 ? '<p class="note">Started from ' + [a.place0 ? esc(a.place0) : "", a.loc0 ? locLink(a.loc0) : ""].filter(Boolean).join(", ") + "</p>" : "") +
-      '<label for="end-odo">Odometer now<input class="big" id="end-odo" inputmode="decimal" autocomplete="off" placeholder="' + a.odo + '"></label>' +
+      '<label for="end-odo">Odometer now<input class="big" id="end-odo" inputmode="decimal" autocomplete="off" placeholder="' + (o ? o.odo1 : a.odo) + '"></label>' +
       '<p class="live" id="live-miles">Enter the reading to see miles driven</p>' +
       placeField("end-place", "Ending at, optional", "", "Last stop") +
-      '<div class="grid2"><label for="end-earn">Earnings, optional<input id="end-earn" inputmode="decimal" autocomplete="off" placeholder="$"></label>' +
-      '<label for="end-fees">Tolls and parking, optional<input id="end-fees" inputmode="decimal" autocomplete="off" placeholder="$"></label></div>' +
-      '<label for="end-note">Note, optional<input id="end-note" autocomplete="off" placeholder="Zone, weather"></label>' +
+      '<div class="grid2"><label for="end-earn">Earnings, optional<input id="end-earn" inputmode="decimal" autocomplete="off" placeholder="$" value="' + (o && o.earn ? o.earn : "") + '"></label>' +
+      '<label for="end-fees">Tolls and parking, optional<input id="end-fees" inputmode="decimal" autocomplete="off" placeholder="$" value="' + (o && o.fees ? o.fees : "") + '"></label></div>' +
+      (o && (o.earn || o.fees) ? '<p class="note">These are the amounts already logged. Change them to the totals for the whole shift.</p>' : "") +
+      '<label for="end-note">Note, optional<input id="end-note" autocomplete="off" placeholder="Zone, weather" value="' + esc(o ? o.note : "") + '"></label>' +
       '<p class="err" id="end-err" role="alert"></p>' +
       '<button class="btn" type="submit">End shift and log it</button>' +
       (ui.discard
-        ? '<div class="row"><span class="note">Throw away this shift without logging it?</span><button type="button" class="btn small danger" data-act="discard-yes">Discard</button><button type="button" class="btn small ghost" data-act="discard-no">Keep it</button></div>'
-        : '<button type="button" class="link" data-act="discard">Discard this shift</button>') +
+        ? '<div class="row"><span class="note">' + (o ? "Delete this shift completely, including what was logged before?" : "Throw away this shift without logging it?") + '</span><button type="button" class="btn small danger" data-act="discard-yes">Discard</button><button type="button" class="btn small ghost" data-act="discard-no">Keep it</button></div>'
+        : (o ? '<button type="button" class="btn ghost" data-act="unreopen">Cancel, keep it as it was logged</button>' : "") +
+          '<button type="button" class="link" data-act="discard">' + (o ? "Delete this shift" : "Discard this shift") + "</button>") +
       "</form>";
   } else {
-    const last = S.shifts.length ? [...S.shifts].sort((x, y) => sortKey(x).localeCompare(sortKey(y))).pop().services : [];
+    const ls = lastShift(), last = ls ? ls.services : [], em = ls && ls.odo0 != null ? endMsOf(ls) : 0;
+    if (em && Date.now() - em < 12 * 36e5)
+      html += '<section class="card"><h3>Last shift</h3><p>' + fmtMi(tot(ls)) + " mi, ended at " + fmtTime(ls.t1) + (ls.place1 ? ", " + esc(ls.place1) : "") + " (odometer " + ls.odo1 + ").</p>" +
+        '<button class="btn ghost" data-act="reopen" data-id="' + ls.id + '">Reopen to add a stop</button>' +
+        '<p class="note">Picks this shift back up from its start reading. When you finish, enter the new end reading and it replaces the old one.</p></section>';
     html += '<form class="card" id="start-form" novalidate><h2>Start a shift</h2>' +
       '<div><h3 style="margin-bottom:8px">Driving for</h3>' + chips(last) + '<p class="note" style="margin-top:8px">Pick two if you are running both at once. Miles are split evenly between them.</p></div>' +
       (manyVehicles() ? vehSelect("start-veh", m.vehicle) : "") +
@@ -407,7 +432,7 @@ function formHtml(){
 }
 
 function viewLog(){
-  const list = [...S.shifts].sort((a, b) => sortKey(b).localeCompare(sortKey(a))), gap = gaps(), many = S.meta.vehicles.length > 1;
+  const list = [...S.shifts].sort((a, b) => sortKey(b).localeCompare(sortKey(a))), newest = list[0], gap = gaps(), many = S.meta.vehicles.length > 1;
   let html = ui.form ? formHtml() : '<div class="row between"><h2>Shift log</h2><button class="btn small" data-act="new">Add a past shift</button></div>';
   if (!list.length) return html + '<p class="empty">No shifts logged yet. Start one on the Shift tab, or add a past shift here.</p>';
   html += '<section class="card" style="gap:0;padding-top:4px">';
@@ -431,7 +456,8 @@ function viewLog(){
       '<div class="num"><b>' + fmtMi(t) + ' mi</b><div class="sub">' + fmtUsd(t * rateFor(s.date)) + "</div></div>" +
       '<div class="acts">' + (ui.confirm === s.id
         ? '<span class="note">Delete this shift?</span><button class="btn small danger" data-act="del-yes" data-id="' + s.id + '">Delete</button><button class="btn small ghost" data-act="del-no">Keep</button>'
-        : '<button class="link" data-act="edit" data-id="' + s.id + '">Edit</button><button class="link" data-act="del" data-id="' + s.id + '">Delete</button>' + spot("loc0") + spot("loc1")) +
+        : (s === newest && s.odo0 != null && !S.meta.active ? '<button class="link" data-act="reopen" data-id="' + s.id + '">Reopen</button>' : "") +
+          '<button class="link" data-act="edit" data-id="' + s.id + '">Edit</button><button class="link" data-act="del" data-id="' + s.id + '">Delete</button>' + spot("loc0") + spot("loc1")) +
       "</div></li>";
   }
   return html + "</ul></section>";
@@ -578,6 +604,8 @@ document.addEventListener("click", async e => {
   if (act === "del"){ ui.confirm = id; render(); return; }
   if (act === "del-no"){ ui.confirm = null; render(); return; }
   if (act === "del-yes"){ S.shifts = S.shifts.filter(x => x.id !== id); ui.confirm = null; commit(); render(); return; }
+  if (act === "reopen"){ reopen(id); ui.tab = "shift"; ui.form = null; ui.confirm = null; ui.discard = false; render(); window.scrollTo(0, 0); return; }
+  if (act === "unreopen"){ if (m.active && m.active.orig){ S.shifts.push(m.active.orig); m.active = null; } ui.discard = false; commit(); render(); return; }
   if (act === "discard"){ ui.discard = true; render(); return; }
   if (act === "discard-no"){ ui.discard = false; render(); return; }
   if (act === "discard-yes"){ m.active = null; ui.discard = false; commit(); render(); return; }
@@ -670,11 +698,15 @@ document.addEventListener("submit", async e => {
   } else if (f.id === "end-form"){
     const a = m.active, odo1 = numVal("#end-odo");
     if (!(odo1 >= a.odo)) return setErr("#end-err", "The reading must be a number at or above your start of " + a.odo + ".");
+    const o = a.orig;
+    if (o && odo1 < o.odo1 && ui.lowOk !== odo1){ ui.lowOk = odo1; return setErr("#end-err", "That is below the " + o.odo1 + " you logged before. Tap End shift again if you are correcting it."); }
+    ui.lowOk = null;
     const earn = optNum("#end-earn", "#end-err", "earnings"), fees = optNum("#end-fees", "#end-err", "tolls and parking");
     if (earn === null || fees === null) return;
-    const st = new Date(a.start), date = localDate(st), sid = newId(), p1 = val("#end-place");
-    S.shifts.push({id: sid, date, t0: hhmm(st), t1: hhmm(), veh: a.veh || m.vehicles[0].id, odo0: a.odo, odo1, miles: r1(odo1 - a.odo),
-      homeAuto: !!a.home, homeMode: m.commute === "sub" ? "sub" : "add", homeMiles: a.home ? commuteFor(a.place0, p1) : 0,
+    const st = new Date(a.start), date = o ? o.date : localDate(st), sid = o ? o.id : newId(), p1 = val("#end-place");
+    S.shifts.push({id: sid, date, startMs: a.start, t0: o ? o.t0 : hhmm(st), t1: hhmm(), veh: a.veh || m.vehicles[0].id, odo0: a.odo, odo1, miles: r1(odo1 - a.odo),
+      homeAuto: !!a.home, homeMode: o && o.homeMiles > 0 ? o.homeMode || "add" : (m.commute === "sub" ? "sub" : "add"),
+      homeMiles: a.home ? commuteFor(a.place0, p1) : (o ? o.homeMiles || 0 : 0),
       services: a.services, earn, fees, note: val("#end-note"), place0: a.place0 || "", place1: p1, loc0: a.loc0 || null, loc1: null});
     m.lastOdo[a.veh || m.vehicles[0].id] = odo1; m.active = null;
     commit(); render();
