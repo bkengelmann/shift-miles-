@@ -1,4 +1,4 @@
-const CACHE = "shift-miles-v2";
+const CACHE = "shift-miles-2026-11-26";
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(["./", "index.html", "icon-180.png", "manifest.webmanifest"])));
   self.skipWaiting();
@@ -10,7 +10,7 @@ self.addEventListener("activate", e => e.waitUntil(
 self.addEventListener("fetch", e => {
   if (e.request.method !== "GET") return;
   // Address and route lookups always go straight to the network and are never stored.
-  if (/nominatim\.openstreetmap\.org|router\.project-osrm\.org/.test(e.request.url)) return;
+  if (/nominatim\.openstreetmap\.org|router\.project-osrm\.org|routing\.openstreetmap\.de/.test(e.request.url)) return;
   e.respondWith(
     fetch(e.request).then(r => { const copy = r.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); return r; })
       .catch(() => caches.match(e.request, {ignoreSearch: true}))

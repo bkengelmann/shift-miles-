@@ -108,6 +108,14 @@ ul{list-style:none;margin:0;padding:0}
 .hide{display:none!important}
 .place{display:flex;flex-direction:column;gap:10px;padding:14px 0;border-bottom:1px solid var(--line)}
 .place:first-child{padding-top:0}
+.photo-row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.thumb{width:72px;height:72px;border-radius:6px;border:1px solid var(--line);background:var(--bg);cursor:pointer;padding:0;flex:none}
+.thumb img{width:100%;height:100%;object-fit:cover;border-radius:6px;display:block}
+.viewer{position:fixed;inset:0;background:#000000e0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));z-index:10}
+.viewer img{max-width:100%;max-height:80vh;border-radius:6px}
+.help ol,ol.steps{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:10px}
+.est{color:var(--accent);font-weight:600}
+code.url{font:500 13px/1.35 ui-monospace,Menlo,monospace;overflow-wrap:anywhere;background:var(--bg);padding:6px 8px;border-radius:6px;display:block}
 @media (max-width:380px){.odo span{font-size:28px;min-width:23px;padding:6px 5px}.figs{grid-template-columns:1fr 1fr}}
 @media (prefers-reduced-motion:no-preference){.btn,.chip{transition:opacity .12s}.btn:active,.chip:active{opacity:.7}}
 </style>
@@ -129,6 +137,8 @@ ul{list-style:none;margin:0;padding:0}
 
 <script>
 "use strict";
+/* Shown in Setup so drivers can tell which version they have. Change it, and CACHE in sw.js, with each release. */
+const VERSION = "2026-11-26";
 /* ---------- helpers ---------- */
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
@@ -162,7 +172,7 @@ const COLORS = ["#3b82c4", "#d9822b", "#4a9d6e", "#a25bb8", "#c9504a", "#7a8794"
 const DEFAULT_SERVICES = ["DoorDash", "Spark", "Uber Eats", "Instacart", "Grubhub"].map((n, i) => ({id: "s" + (i + 1), name: n}));
 function blankMeta(){
   return {v:2, services: clone(DEFAULT_SERVICES), vehicles:[{id:"v1", name:"My vehicle"}], vehicle:"v1", active:null,
-    commute:"off", homePlace:null, places:[], years:{}, logYears:[], lastOdo:{}, gps:true, lastBackup:null};
+    commute:"off", homePlace:null, places:[], years:{}, logYears:[], lastOdo:{}, gps:true, lastBackup:null, seenHelp:false, photoOn:true};
 }
 function fixMeta(m){
   const b = blankMeta(); m = m && typeof m === "object" ? m : {};
@@ -182,10 +192,10 @@ function fixMeta(m){
     places: Array.isArray(m.places) ? m.places : [],
     years, logYears: Array.isArray(m.logYears) ? m.logYears : [],
     lastOdo: typeof m.lastOdo === "number" ? {[v0]: m.lastOdo} : (m.lastOdo && typeof m.lastOdo === "object" ? m.lastOdo : {}),
-    gps: m.gps !== false, lastBackup: m.lastBackup || null};
+    gps: m.gps !== false, lastBackup: m.lastBackup || null, seenHelp: !!m.seenHelp, photoOn: m.photoOn !== false};
 }
 let S = {meta: blankMeta(), shifts: []};
-const ui = {tab:"shift", year:String(new Date().getFullYear()), veh:null, form:null, confirm:null, discard:false, restore:null, gapOk:null, note:{}};
+const ui = {tab:"shift", year:String(new Date().getFullYear()), veh:null, form:null, confirm:null, discard:false, restore:null, gapOk:null, note:{}, help:false, prefill:null, photo:{}, allPhotos:null, restorePhotos:null};
 
 const homeSigned = s => (s.homeMode === "sub" ? -1 : 1) * (s.homeMiles || 0);
 const tot = s => Math.max(0, (s.miles || 0) + homeSigned(s));
@@ -198,7 +208,7 @@ const manyVehicles = () => liveVehicles().length > 1;
 
 function totals(y){
   const list = S.shifts.filter(s => s.date.startsWith(y + "-"));
-  let mi = 0, ded = 0, earn = 0, fees = 0; const by = {}, rates = {}, byVeh = {};
+  let mi = 0, ded = 0, earn = 0, fees = 0; const by = {}, rates = {}, byVeh = {}, pay = {pmi:0, pearn:0, hr:0, hEarn:0};
   const periods = PERIODS.map(() => ({mi:0, ded:0, earn:0, fees:0}));
   for (const s of list){
     const t = tot(s), r = rateFor(s.date), n = s.services.length || 1, p = periods[periodOf(s.date)];
@@ -206,13 +216,18 @@ function totals(y){
     p.mi += t; p.ded += t * r; p.earn += s.earn || 0; p.fees += s.fees || 0;
     rates[r] = (rates[r] || 0) + t;
     byVeh[vehOf(s)] = (byVeh[vehOf(s)] || 0) + t;
+    /* Pay per mile and per hour count only shifts with earnings entered, so unpaid entries do not drag the rate down. */
+    const e = s.earn || 0, h = hoursOf(s);
+    if (e > 0){ pay.pmi += t; pay.pearn += e; if (h > 0){ pay.hr += h; pay.hEarn += e; } }
     for (const id of s.services){
-      const b = (by[id] = by[id] || {mi:0, ded:0, earn:0, n:0});
-      b.mi += t / n; b.ded += t * r / n; b.earn += (s.earn || 0) / n; b.n++;
+      const b = (by[id] = by[id] || {mi:0, ded:0, earn:0, n:0, pmi:0, pearn:0, hr:0, hEarn:0});
+      b.mi += t / n; b.ded += t * r / n; b.earn += e / n; b.n++;
+      if (e > 0){ b.pmi += t / n; b.pearn += e / n; if (h > 0){ b.hr += h / n; b.hEarn += e / n; } }
     }
   }
-  return {list, mi, ded, earn, fees, by, rates, byVeh, periods};
+  return {list, mi, ded, earn, fees, by, rates, byVeh, periods, pay};
 }
+const payText = p => [p.pmi > 0 ? fmtUsd(p.pearn / p.pmi) + " per mile" : "", p.hr > 0 ? fmtUsd(p.hEarn / p.hr) + " per hour" : ""].filter(Boolean).join(" · ");
 /* Odometer gap for each shift against the previous shift on the same vehicle. */
 function gaps(){
   const out = {}, prev = {};
@@ -242,28 +257,179 @@ function commuteFor(p0, p1){
   const a = placeByName(p0), b = placeByName(p1);
   return r1((a && a.homeMi > 0 ? a.homeMi : 0) + (b && b.homeMi > 0 ? b.homeMi : 0));
 }
+/* Lookups go out one at a time, at least 1.1 seconds apart, and give up after 10 seconds.
+   The free OpenStreetMap servers allow one request a second and no heavy use. */
+let netQ = Promise.resolve(), netLast = 0;
+function politeFetch(url, ms = 10000){
+  const run = netQ.then(async () => {
+    const wait = netLast + 1100 - Date.now(); if (wait > 0) await new Promise(res => setTimeout(res, wait));
+    netLast = Date.now();
+    const c = typeof AbortController === "function" ? new AbortController() : null, timer = c ? setTimeout(() => c.abort(), ms) : 0;
+    try { return await fetch(url, c ? {signal: c.signal} : {}); } finally { clearTimeout(timer); }
+  });
+  netQ = run.catch(() => {});
+  return run;
+}
 async function geocode(q){
-  const r = await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=us&q=" + encodeURIComponent(q));
+  const r = await politeFetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=us&q=" + encodeURIComponent(q));
   if (!r.ok) throw new Error("lookup");
   const j = await r.json();
   if (!j.length) throw new Error("notfound");
   return {lat: +(+j[0].lat).toFixed(5), lon: +(+j[0].lon).toFixed(5), label: j[0].display_name};
 }
-async function routeMiles(a, b){
-  const r = await fetch("https://router.project-osrm.org/route/v1/driving/" + a.lon + "," + a.lat + ";" + b.lon + "," + b.lat + "?overview=false");
-  if (!r.ok) throw new Error("route");
-  const j = await r.json();
-  if (j.code !== "Ok" || !j.routes || !j.routes.length) throw new Error("route");
-  return r1(j.routes[0].distance / 1609.344);
+/* Two free OSRM servers on OpenStreetMap data. The second is tried when the first refuses, times out or finds no route,
+   and a server that refuses is skipped for a while. Answers are kept on the phone so the same pair is never asked twice. */
+const ROUTERS = ["https://router.project-osrm.org/route/v1/driving/", "https://routing.openstreetmap.de/routed-car/route/v1/driving/"];
+const routerDown = {}, RC_KEY = "shift-miles-routes";
+let routeCache = null;
+function rcGet(){
+  if (!routeCache){ try { routeCache = JSON.parse(localStorage.getItem(RC_KEY) || "{}") || {}; } catch(e){ routeCache = {}; } }
+  return routeCache;
 }
+function rcPut(k, mi){
+  const c = rcGet(); delete c[k]; c[k] = mi;
+  const keys = Object.keys(c); if (keys.length > 300) delete c[keys[0]];
+  try { localStorage.setItem(RC_KEY, JSON.stringify(c)); } catch(e){}
+}
+const routeKey = (a, b) => a.lat.toFixed(4) + "," + a.lon.toFixed(4) + ">" + b.lat.toFixed(4) + "," + b.lon.toFixed(4);
+async function routeMiles(a, b){
+  const k = routeKey(a, b), hit = rcGet()[k];
+  if (typeof hit === "number") return hit;
+  for (const base of ROUTERS){
+    if (routerDown[base] > Date.now()) continue;
+    try {
+      const r = await politeFetch(base + a.lon + "," + a.lat + ";" + b.lon + "," + b.lat + "?overview=false");
+      if (r.status === 429 || r.status >= 500){ routerDown[base] = Date.now() + 10 * 6e4; continue; }
+      if (!r.ok) continue;
+      const j = await r.json();
+      if (j.code !== "Ok" || !j.routes || !j.routes.length) continue;
+      const mi = r1(j.routes[0].distance / 1609.344);
+      rcPut(k, mi); return mi;
+    } catch(err){ routerDown[base] = Date.now() + 2 * 6e4; }
+  }
+  throw new Error("route");
+}
+/* Road miles usually run 20 to 40 percent over a straight line; 1.25 is the middle used when no server answers. */
+const ROAD_FACTOR = 1.25;
+const estMiles = (a, b) => r1(metersBetween(a, b) / 1609.344 * ROAD_FACTOR);
 const getFix = () => new Promise((res, rej) => {
   if (!navigator.geolocation) return rej(new Error("nogps"));
   navigator.geolocation.getCurrentPosition(p => res({lat: +p.coords.latitude.toFixed(5), lon: +p.coords.longitude.toFixed(5)}), rej, {enableHighAccuracy:true, timeout:15000, maximumAge:30000});
 });
+/* Fills in one-way miles from home. Returns "route", "est" (a marked straight-line estimate) or "fail" (kept the miles already there). */
 async function routePlace(p){
   if (!S.meta.homePlace || typeof p.lat !== "number") return false;
-  p.homeMi = await routeMiles(S.meta.homePlace, p);
-  return true;
+  try { p.homeMi = await routeMiles(S.meta.homePlace, p); delete p.homeEst; return "route"; }
+  catch(err){
+    if (p.homeMi > 0 && !p.homeEst) return "fail";
+    p.homeMi = estMiles(S.meta.homePlace, p); p.homeEst = true; return "est";
+  }
+}
+
+/* ---------- odometer photos: kept in IndexedDB, since localStorage is too small for pictures ---------- */
+let dbP = null;
+function photoDb(){
+  return dbP = dbP || new Promise((res, rej) => {
+    if (!window.indexedDB) return rej(new Error("noidb"));
+    const rq = indexedDB.open("shift-miles-photos", 1);
+    rq.onupgradeneeded = () => rq.result.createObjectStore("p");
+    rq.onsuccess = () => res(rq.result); rq.onerror = () => rej(rq.error);
+  });
+}
+function photoTx(mode, work){
+  return photoDb().then(db => new Promise((res, rej) => {
+    const tx = db.transaction("p", mode), out = work(tx.objectStore("p"));
+    tx.oncomplete = () => res(typeof out === "function" ? out() : out && "result" in out ? out.result : undefined);
+    tx.onerror = tx.onabort = () => rej(tx.error);
+  }));
+}
+const photoPut = (id, d) => photoTx("readwrite", st => { st.put(d, id); });
+const photoGet = id => photoTx("readonly", st => st.get(id));
+const photoDel = id => photoTx("readwrite", st => { st.delete(id); });
+function photoAll(){
+  return photoTx("readonly", st => { const k = st.getAllKeys(), v = st.getAll(); return () => { const o = {}; k.result.forEach((key, i) => { o[key] = v.result[i]; }); return o; }; });
+}
+function photoReplace(o){
+  return photoTx("readwrite", st => { st.clear(); for (const [k, d] of Object.entries(o)) st.put(d, k); })
+    .then(() => { for (const k of Object.keys(photoCache)) delete photoCache[k]; ui.allPhotos = null; render(); }).catch(() => {});
+}
+const photoCache = {};
+const usedPhotoIds = () => [...S.shifts.flatMap(s => [s.photo0, s.photo1]), S.meta.active && S.meta.active.photo0].filter(Boolean);
+/* Only small JPEG, PNG or WebP pictures from a backup file are accepted. */
+function cleanPhotos(o){
+  const out = {};
+  if (o && typeof o === "object") for (const [k, d] of Object.entries(o))
+    if (/^ph[a-z0-9]{1,20}$/.test(k) && typeof d === "string" && d.length < 3e6 && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+\/=]+$/.test(d)) out[k] = d;
+  return out;
+}
+/* Shrink a camera photo to 800 pixels on its long side as a JPEG, which keeps the digits readable. */
+function shrinkPhoto(file){
+  return new Promise((res, rej) => {
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = () => {
+      const k = Math.min(1, 800 / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement("canvas");
+      c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+      res(c.toDataURL("image/jpeg", 0.6));
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); rej(new Error("photo")); };
+    img.src = url;
+  });
+}
+/* Save the photo taken on the Start or End form and return its id. */
+function storePhoto(k){
+  const d = ui.photo[k]; if (!d) return null;
+  const id = "ph" + newId(); photoCache[id] = d; ui.allPhotos = null; delete ui.photo[k];
+  photoPut(id, d).catch(() => {});
+  return id;
+}
+function dropPhotos(...ids){ ids.filter(Boolean).forEach(id => { delete photoCache[id]; photoDel(id).catch(() => {}); }); ui.allPhotos = null; }
+function fillPhotos(){
+  document.querySelectorAll("img[data-photo]").forEach(img => {
+    const id = img.dataset.photo, d = photoCache[id];
+    if (d){ img.src = d; return; }
+    if (d === null) return;
+    photoGet(id).then(v => { photoCache[id] = v || null; if (v) document.querySelectorAll("img[data-photo]").forEach(x => { if (x.dataset.photo === id) x.src = v; }); }).catch(() => {});
+  });
+}
+function showPhoto(src){
+  if (!src) return;
+  const v = document.createElement("div"); v.className = "viewer"; v.dataset.act = "photo-close";
+  v.innerHTML = '<img alt="Odometer photo" src="' + esc(src) + '"><button type="button" class="btn">Close</button>';
+  document.body.appendChild(v);
+}
+const thumb = (id, label) => '<button type="button" class="thumb" data-act="photo-view" data-photo="' + esc(id) + '" aria-label="' + label + '"><img alt="" data-photo="' + esc(id) + '"></button>';
+function photoInner(k){
+  const d = ui.photo[k];
+  return '<div class="photo-row">' + (d ? '<button type="button" class="thumb" data-act="photo-view-pending" data-k="' + k + '" aria-label="View photo"><img alt="" src="' + esc(d) + '"></button>' : "") +
+    '<label class="btn small ghost" for="ph-' + k + '" style="position:relative;flex-direction:row">' + (d ? "Retake photo" : "Odometer photo, optional") +
+    '<input type="file" id="ph-' + k + '" data-photo-k="' + k + '" accept="image/*" capture="environment" style="position:absolute;opacity:0;width:1px;height:1px;padding:0;border:0"></label>' +
+    (d ? '<button type="button" class="link" data-act="photo-drop" data-k="' + k + '">Remove</button>' : "") + "</div>" + msg("photo-" + k);
+}
+const photoField = k => S.meta.photoOn ? '<div id="phw-' + k + '">' + photoInner(k) + "</div>" : "";
+function repaintPhoto(k){ const w = $("#phw-" + k); if (w) w.innerHTML = photoInner(k); }
+
+/* ---------- links for iPhone Shortcuts ----------
+   ?start=walmart-louise-ave&odo=48210.4&svc=spark fills in the Start form; ?end=home&odo=48262 fills in the End form.
+   Nothing is logged until the driver taps the button. */
+const slug = s => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+function placeFromLink(v){
+  const sv = slug(v); if (!sv) return "";
+  const p = S.meta.places.find(x => slug(x.name) === sv);
+  return p ? p.name : String(v).trim().slice(0, 60);
+}
+function readLink(){
+  let q; try { q = new URLSearchParams(location.search); } catch(e){ return; }
+  const kind = q.has("start") ? "start" : q.has("end") ? "end" : null;
+  if (!kind) return;
+  try { history.replaceState(null, "", location.pathname); } catch(e){}
+  const odo = parseFloat(q.get("odo")), want = (q.get("svc") || "").split(",").map(slug).filter(Boolean);
+  const svcs = want.map(x => (S.meta.services.find(s => !s.gone && slug(s.name) === x) || {}).id).filter(Boolean);
+  ui.tab = "shift"; ui.help = false;
+  if (kind === "start" && S.meta.active){ ui.prefill = {msg: "A shift is already in progress, so the start link was not used. End this one first."}; return; }
+  if (kind === "end" && !S.meta.active){ ui.prefill = {msg: "No shift is in progress, so there was nothing for the end link to fill in."}; return; }
+  ui.prefill = {kind, place: placeFromLink(q.get(kind)), odo: odo >= 0 ? odo : null, svcs,
+    msg: "Filled in from your shortcut. Check it, then tap " + (kind === "start" ? "Start shift." : "End shift and log it.")};
 }
 
 /* ---------- storage: this phone only ---------- */
@@ -351,21 +517,30 @@ function endMsOf(s){
   if (e < startMsOf(s)) e += 864e5;
   return e;
 }
+/* Hours on the clock from the start and end times; 0 for a shift entered by hand without times. */
+function hoursOf(s){ if (!s.t0 || !s.t1) return 0; const h = (endMsOf(s) - startMsOf(s)) / 36e5; return h > 0 && h < 24 ? h : 0; }
 /* Take a logged shift back off the log and make it the shift in progress again. */
 function reopen(id){
   const s = S.shifts.find(x => x.id === id); if (!s || s.odo0 == null || S.meta.active) return;
   S.shifts = S.shifts.filter(x => x.id !== id);
   const veh = vehOf(s);
-  S.meta.active = {start: startMsOf(s), odo: s.odo0, services: s.services, veh, home: !!s.homeAuto, loc0: s.loc0 || null, place0: s.place0 || "", orig: s};
+  S.meta.active = {start: startMsOf(s), odo: s.odo0, services: s.services, veh, home: !!s.homeAuto, loc0: s.loc0 || null, place0: s.place0 || "", photo0: s.photo0 || null, orig: s};
   if (liveVehicles().some(v => v.id === veh)) S.meta.vehicle = veh;
   ui.lowOk = null; commit();
 }
 const msg = k => '<p class="note" id="' + k + '-msg" role="status">' + esc(ui.note[k] || "") + "</p>";
 
+function liveText(raw){
+  const a = S.meta.active, v = parseFloat(raw);
+  if (!(v >= a.odo)) return String(raw).trim() ? "That is below your start reading" : "Enter the reading to see miles driven";
+  const mi = r1(v - a.odo);
+  return fmtMi(mi) + " miles driven · " + fmtUsd(mi * rateFor(localDate(new Date(a.start)))) + " deduction";
+}
 function viewShift(){
-  const a = S.meta.active, m = S.meta;
-  let html = "";
+  const a = S.meta.active, m = S.meta, pf = ui.prefill;
+  let html = pf && pf.msg ? '<p class="warn">' + esc(pf.msg) + "</p>" : "";
   if (a){
+    const endOdo = pf && pf.kind === "end" && pf.odo != null ? String(pf.odo) : "";
     const started = new Date(a.start), hours = (Date.now() - a.start) / 36e5;
     const o = a.orig;
     html += '<form class="card" id="end-form" novalidate><h2>' + (o ? "Shift reopened" : "Shift in progress") + "</h2>" +
@@ -375,9 +550,11 @@ function viewShift(){
       '<p class="note">Started ' + fmtDay(localDate(started)) + " at " + fmtTime(hhmm(started)) + " for " + esc(a.services.map(svcName).join(" + ")) +
       (manyVehicles() ? " in " + esc(vehName(a.veh)) : "") + ".</p>" +
       (a.place0 || a.loc0 ? '<p class="note">Started from ' + [a.place0 ? esc(a.place0) : "", a.loc0 ? locLink(a.loc0) : ""].filter(Boolean).join(", ") + "</p>" : "") +
-      '<label for="end-odo">Odometer now<input class="big" id="end-odo" inputmode="decimal" autocomplete="off" placeholder="' + (o ? o.odo1 : a.odo) + '"></label>' +
-      '<p class="live" id="live-miles">Enter the reading to see miles driven</p>' +
-      placeField("end-place", "Ending at, optional", "", "Last stop") +
+      (a.photo0 ? '<div class="photo-row">' + thumb(a.photo0, "Start odometer photo") + '<span class="note">Start photo</span></div>' : "") +
+      '<label for="end-odo">Odometer now<input class="big" id="end-odo" inputmode="decimal" autocomplete="off" value="' + esc(endOdo) + '" placeholder="' + (o ? o.odo1 : a.odo) + '"></label>' +
+      '<p class="live" id="live-miles">' + liveText(endOdo) + "</p>" + photoField("end") +
+      (o && o.photo1 && m.photoOn ? '<p class="note">The end photo from before is kept unless you take a new one.</p>' : "") +
+      placeField("end-place", "Ending at, optional", pf && pf.kind === "end" ? pf.place : "", "Last stop") +
       '<div class="grid2"><label for="end-earn">Earnings, optional<input id="end-earn" inputmode="decimal" autocomplete="off" placeholder="$" value="' + (o && o.earn ? o.earn : "") + '"></label>' +
       '<label for="end-fees">Tolls and parking, optional<input id="end-fees" inputmode="decimal" autocomplete="off" placeholder="$" value="' + (o && o.fees ? o.fees : "") + '"></label></div>' +
       (o && (o.earn || o.fees) ? '<p class="note">These are the amounts already logged. Change them to the totals for the whole shift.</p>' : "") +
@@ -390,16 +567,17 @@ function viewShift(){
           '<button type="button" class="link" data-act="discard">' + (o ? "Delete this shift" : "Discard this shift") + "</button>") +
       "</form>";
   } else {
-    const ls = lastShift(), last = ls ? ls.services : [], em = ls && ls.odo0 != null ? endMsOf(ls) : 0;
+    const ls = lastShift(), last = ls ? ls.services : [], em = ls && ls.odo0 != null ? endMsOf(ls) : 0, ps = pf && pf.kind === "start" ? pf : null;
     if (em && Date.now() - em < 12 * 36e5)
       html += '<section class="card"><h3>Last shift</h3><p>' + fmtMi(tot(ls)) + " mi, ended at " + fmtTime(ls.t1) + (ls.place1 ? ", " + esc(ls.place1) : "") + " (odometer " + ls.odo1 + ").</p>" +
         '<button class="btn ghost" data-act="reopen" data-id="' + ls.id + '">Reopen to add a stop</button>' +
         '<p class="note">Picks this shift back up from its start reading. When you finish, enter the new end reading and it replaces the old one.</p></section>';
     html += '<form class="card" id="start-form" novalidate><h2>Start a shift</h2>' +
-      '<div><h3 style="margin-bottom:8px">Driving for</h3>' + chips(last) + '<p class="note" style="margin-top:8px">Pick two if you are running both at once. Miles are split evenly between them.</p></div>' +
+      '<div><h3 style="margin-bottom:8px">Driving for</h3>' + chips(ps && ps.svcs.length ? ps.svcs : last) + '<p class="note" style="margin-top:8px">Pick two if you are running both at once. Miles are split evenly between them.</p></div>' +
       (manyVehicles() ? vehSelect("start-veh", m.vehicle) : "") +
-      '<label for="start-odo">Odometer at start<input class="big" id="start-odo" inputmode="decimal" autocomplete="off" value="' + (m.lastOdo[m.vehicle] ?? "") + '" placeholder="48210.4"></label>' +
-      placeField("start-place", "Starting from, optional", "", "Pick a saved place or type one") +
+      '<label for="start-odo">Odometer at start<input class="big" id="start-odo" inputmode="decimal" autocomplete="off" value="' + (ps && ps.odo != null ? ps.odo : (m.lastOdo[m.vehicle] ?? "")) + '" placeholder="48210.4"></label>' +
+      photoField("start") +
+      placeField("start-place", "Starting from, optional", ps ? ps.place : "", "Pick a saved place or type one") +
       (m.commute !== "off" ? '<label class="check" for="start-home"><input type="checkbox" id="start-home" checked>' + homeWord() + "</label>" : "") +
       '<p class="err" id="start-err" role="alert"></p>' +
       '<button class="btn" type="submit">Start shift</button>' +
@@ -451,6 +629,7 @@ function viewLog(){
       (s.fees ? ", tolls and parking " + fmtUsd(s.fees) : "") + (s.earn ? ", earned " + fmtUsd(s.earn) : "") + (s.note ? ". " + esc(s.note) : "");
     const spot = k => s[k] && !nearestPlace(s[k]) ? '<button class="link" data-act="save-spot" data-id="' + s.id + '" data-k="' + k + '">Save ' + (k === "loc0" ? "start" : "end") + " spot</button>" : "";
     html += '<li class="shift"><div class="when"><b>' + fmtDay(s.date) + '</b><div class="sub">' + esc(s.services.map(svcName).join(" + ")) + " · " + times + '</div><div class="sub">' + detail + "</div>" + placeLine(s) +
+      (s.photo0 || s.photo1 ? '<div class="photo-row" style="margin-top:6px">' + (s.photo0 ? thumb(s.photo0, "Start odometer photo") : "") + (s.photo1 ? thumb(s.photo1, "End odometer photo") : "") + "</div>" : "") +
       (g > 0.05 ? '<div class="sub">' + fmtMi(g) + " personal miles since the previous shift</div>" : "") +
       (g < -0.05 ? '<div class="flag">Starts ' + fmtMi(-g) + " mi below the previous end reading. One of them is wrong.</div>" : "") + "</div>" +
       '<div class="num"><b>' + fmtMi(t) + ' mi</b><div class="sub">' + fmtUsd(t * rateFor(s.date)) + "</div></div>" +
@@ -481,8 +660,13 @@ function viewTotals(){
     const b = t.by[id];
     html += '<div class="svc"><span class="name"><i style="background:' + svcColor(id) + '"></i>' + esc(svcName(id)) + "</span><b>" + fmtMi(b.mi) + " mi</b>" +
       '<div class="bar"><i style="width:' + (max ? Math.max(2, b.mi / max * 100) : 0) + "%;background:" + svcColor(id) + '"></i></div>' +
-      '<span class="sub">' + fmtUsd(b.ded) + " deduction · " + b.n + (b.n === 1 ? " shift" : " shifts") + (b.earn && b.mi ? " · " + fmtUsd(b.earn) + " earned, " + fmtUsd(b.earn / b.mi) + " per mile" : "") + "</span></div>";
+      '<span class="sub">' + fmtUsd(b.ded) + " deduction · " + b.n + (b.n === 1 ? " shift" : " shifts") + (b.earn ? " · " + fmtUsd(b.earn) + " earned" : "") + "</span>" +
+      (payText(b) ? '<span class="sub"><b>' + payText(b) + "</b></span>" : "") + "</div>";
   }
+  if (payText(t.pay) && ids.length > 1) html += '<div class="kv total"><span>All services</span><span>' + payText(t.pay) + "</span></div>";
+  if (ids.length) html += '<p class="note" style="margin-top:8px">' + (t.earn
+    ? "Pay per mile and per hour count only shifts with earnings entered. Hours run from start to end time, so past shifts added by hand are left out of per hour. A shift run for two services is split evenly."
+    : "Enter your earnings when you end a shift to see pay per mile and per hour for each service.") + "</p>";
   html += "</section>";
 
   html += '<section class="card" style="gap:4px"><h3>By estimated-tax period</h3>' + PERIODS.map((p, i) => {
@@ -521,13 +705,15 @@ function viewSetup(){
     '<label for="home-addr">Home address<input id="home-addr" autocomplete="street-address" value="' + esc(h ? h.addr : "") + '" placeholder="123 Main St, Sioux Falls, SD"></label>' +
     '<div class="row"><button class="btn small" data-act="home-find">Find this address</button><button class="btn small ghost" data-act="home-here">Use where I am now</button></div>' +
     (h ? '<p class="note">Home is set to ' + esc(h.label || "a pinned spot") + " (" + locLink(h) + ").</p>" : '<p class="note">No home location yet.</p>') + msg("home") +
-    '<p class="note">Finding an address or a driving route sends that address or pair of map points to OpenStreetMap\'s public servers. Your log never leaves the phone.</p></section>';
+    '<p class="note">Finding an address or a driving route sends that address or pair of map points to free OpenStreetMap servers. Your log never leaves the phone.</p>' +
+    '<p class="note">Map data © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>. Driving routes by OSRM. <a href="https://www.openstreetmap.org/fixthemap">Fix the map</a>.</p></section>';
 
   html += '<section class="card"><h3>Saved places</h3><div>' +
     (m.places.length ? m.places.map(p => '<div class="place">' +
       '<label for="pn-' + p.id + '">Name<input class="pl-name" data-id="' + p.id + '" id="pn-' + p.id + '" value="' + esc(p.name) + '" maxlength="40"></label>' +
       '<p class="note">' + (p.addr ? esc(p.addr) + ". " : "") + (typeof p.lat === "number" ? "Pinned at " + locLink(p) + ". Shifts that start or end within 150 yards are labeled automatically." : "No map pin, so it cannot be matched by GPS or routed.") + "</p>" +
       '<label for="pm-' + p.id + '">Driving miles from home, one way<input class="pl-mi" data-id="' + p.id + '" id="pm-' + p.id + '" inputmode="decimal" autocomplete="off" value="' + (p.homeMi ?? "") + '"></label>' +
+      (p.homeEst ? '<p class="note"><span class="est">Estimate.</span> Straight-line distance times ' + ROAD_FACTOR + ', because the route lookup did not answer. Check it against your trip meter, or look it up again later.</p>' : "") +
       '<div class="row">' + (h && typeof p.lat === "number" ? '<button class="link" data-act="place-route" data-id="' + p.id + '">Look up driving miles</button>' : "") + '<button class="link" data-act="place-del" data-id="' + p.id + '">Remove</button></div></div>').join("")
       : '<p class="empty">No saved places yet. Add the stores you start from most.</p>') + "</div>" +
     '<form class="stack" id="place-form" novalidate><label for="place-name">New place name<input id="place-name" autocomplete="off" placeholder="Walmart, Louise Ave" maxlength="40"></label>' +
@@ -537,30 +723,74 @@ function viewSetup(){
 
   html += '<section class="card"><h3>Location</h3><label class="check" for="gps-on"><input type="checkbox" id="gps-on"' + (m.gps ? " checked" : "") + '>Stamp my location when a shift starts and ends</label>' +
     '<p class="note">Your phone asks for permission the first time. The app has to be open on screen to get a fix, so it cannot follow your route in the background.</p></section>' +
+    '<section class="card"><h3>Odometer photos</h3><label class="check" for="photo-on"><input type="checkbox" id="photo-on"' + (m.photoOn ? " checked" : "") + '>Show a camera button when a shift starts and ends</label>' +
+    '<p class="note">Photos are optional extra proof. The log you keep at the time of each shift is the record the IRS asks for. Each photo is shrunk before saving, stays on this phone, and goes into your backup file, which makes the file bigger.</p>' +
+    '<p class="note" id="photo-size">' + photoStats() + "</p></section>" +
+    shortcutsCard() +
     '<section class="card"><h3>Backup</h3><p class="note">Your log is kept in this app on this phone and nowhere else. Clearing website data or removing the app from your home screen erases it. ' +
     (m.lastBackup ? "Last backup: " + fmtDay(m.lastBackup) + "." : "You have not made a backup yet.") + "</p>" +
     (ui.restore
       ? '<div class="row"><span class="note">Replace the ' + S.shifts.length + " shifts on this phone with the " + ui.restore.shifts.length + ' in that backup?</span><button class="btn small danger" data-act="restore-yes">Replace</button><button class="btn small ghost" data-act="restore-no">Cancel</button></div>'
       : '<div class="row"><button class="btn" data-act="backup">Save a backup file</button><label class="btn ghost" for="restore" style="position:relative;flex-direction:row">Restore from a backup<input type="file" id="restore" accept=".json,application/json" style="position:absolute;opacity:0;width:1px;height:1px;padding:0;border:0"></label></div>') +
     msg("backup") + "</section>";
+  html += '<section class="card"><h3>About</h3><div class="kv"><span>Version</span><span>' + VERSION + "</span></div>" +
+    '<button class="btn ghost" data-act="help-open">How Shift Miles works</button>' +
+    '<p class="note">If someone sees an older version, closing and reopening the app with a signal picks up the newest one.</p></section>';
   return html;
+}
+function photoStats(){
+  const o = ui.allPhotos; if (!o) return "";
+  const ids = Object.keys(o), bytes = ids.reduce((n, k) => n + o[k].length * 0.75, 0);
+  return ids.length ? ids.length + (ids.length === 1 ? " photo" : " photos") + ", about " + (bytes / 1048576).toFixed(1) + " MB on this phone." : "No photos saved yet.";
+}
+function loadPhotoStats(){
+  if (ui.allPhotos) return;
+  photoAll().then(o => { ui.allPhotos = o; const el = $("#photo-size"); if (el) el.textContent = photoStats(); }).catch(() => {});
+}
+function shortcutsCard(){
+  const base = location.origin + location.pathname, places = S.meta.places;
+  return '<section class="card"><h3>iPhone Shortcuts</h3>' +
+    '<p class="note">A link can open Shift Miles with the Start form filled in for a store. You still check it and tap Start shift. The link never logs anything by itself.</p>' +
+    '<p class="warn">iPhone opens these links in Safari. If you added Shift Miles to your Home Screen, that copy keeps its own log, separate from Safari\'s, so use links only if you run Shift Miles in Safari.</p>' +
+    (places.length ? places.map(p => { const u = base + "?start=" + slug(p.name) + "&odo=";
+      return '<div class="stack"><b>' + esc(p.name) + '</b><code class="url">' + esc(u) + '</code><button type="button" class="link" data-act="copy-link" data-url="' + esc(u) + '">Copy start link</button></div>'; }).join("")
+      : '<p class="empty">Add a saved place above to get its link.</p>') + msg("links") +
+    '<ol class="steps note"><li>In the Shortcuts app, open Automation, tap the plus button, and choose Arrive. Pick the store and set it to Run Immediately.</li>' +
+    "<li>Add the action Ask for Input. Set Input Type to Number and the prompt to Odometer.</li>" +
+    "<li>Add the action URL. Paste the store's start link and put Provided Input right after odo=.</li>" +
+    "<li>Add the action Open URLs.</li></ol>" +
+    '<p class="note">Add &amp;svc=DoorDash to a start link to pick the service. An end link works the same way: ' + esc(base) + "?end=home&amp;odo=</p></section>";
+}
+function viewHelp(){
+  const standalone = navigator.standalone || (window.matchMedia && matchMedia("(display-mode: standalone)").matches);
+  return '<section class="card help"><h2>How Shift Miles works</h2><ol>' +
+    "<li><b>Start a shift</b> when you head out. Pick the app you are driving for and type the odometer reading.</li>" +
+    "<li><b>End the shift</b> when you are done and type the reading again. Add your earnings to see pay per mile and per hour on the Totals tab.</li>" +
+    "<li><b>Save your stores</b> on the Setup tab. Shifts that start or end there are labeled for you.</li>" +
+    "<li><b>At tax time,</b> the Totals tab has your business miles and the deduction at the IRS rate, with a CSV and a one-page summary for your tax preparer.</li>" +
+    "<li><b>Your log stays on this phone.</b> Nothing is uploaded. Save a backup file from the Setup tab now and then.</li></ol>" +
+    (standalone ? "" : '<p class="warn">In Safari, tap the Share button, then Add to Home Screen, so Shift Miles opens like an app.</p>') +
+    '<p class="note">Shift Miles keeps records. It is not tax advice.</p>' +
+    '<button class="btn" data-act="help-done">' + (S.meta.seenHelp ? "Close" : "Got it") + "</button></section>";
 }
 
 function render(){
   document.querySelectorAll("nav button").forEach(b => b.setAttribute("aria-selected", String(b.dataset.tab === ui.tab)));
-  $("#main").innerHTML = (ui.tab === "shift" ? viewShift() : ui.tab === "log" ? viewLog() : ui.tab === "totals" ? viewTotals() : viewSetup()) + placesList();
-  paintStatus();
+  $("#main").innerHTML = (ui.help ? viewHelp() : ui.tab === "shift" ? viewShift() : ui.tab === "log" ? viewLog() : ui.tab === "totals" ? viewTotals() : viewSetup()) + placesList();
+  paintStatus(); fillPhotos();
+  if (ui.tab === "setup" && !ui.help) loadPhotoStats();
 }
 
 /* ---------- exports ---------- */
 const sorted = y => totals(y).list.sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
 function csvFor(y){
   const q = v => { v = String(v ?? ""); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
-  const rows = [["Date","Start time","End time","Vehicle","Services","Odometer start","Odometer end","Miles driven","Home miles","Total miles","Rate per mile","Mileage deduction","Tolls and parking","Earnings","Note","Start place","End place","Start lat","Start lon","End lat","End lon"]];
+  const rows = [["Date","Start time","End time","Vehicle","Services","Odometer start","Odometer end","Miles driven","Home miles","Total miles","Rate per mile","Mileage deduction","Tolls and parking","Earnings","Note","Start place","End place","Start lat","Start lon","End lat","End lon","Hours","Earnings per mile","Earnings per hour"]];
   sorted(y).forEach(s => {
-    const t = tot(s), r = rateFor(s.date);
+    const t = tot(s), r = rateFor(s.date), h = hoursOf(s);
     rows.push([s.date, s.t0 || "", s.t1 || "", vehName(vehOf(s)), s.services.map(svcName).join(" + "), s.odo0 ?? "", s.odo1 ?? "", s.miles, homeSigned(s), r1(t), r, (t * r).toFixed(2), s.fees || "", s.earn || "", s.note || "", s.place0 || "", s.place1 || "",
-      s.loc0 ? s.loc0.lat : "", s.loc0 ? s.loc0.lon : "", s.loc1 ? s.loc1.lat : "", s.loc1 ? s.loc1.lon : ""]);
+      s.loc0 ? s.loc0.lat : "", s.loc0 ? s.loc0.lon : "", s.loc1 ? s.loc1.lat : "", s.loc1 ? s.loc1.lon : "",
+      h ? h.toFixed(2) : "", s.earn && t ? (s.earn / t).toFixed(2) : "", s.earn && h ? (s.earn / h).toFixed(2) : ""]);
   });
   return rows.map(r => r.map(q).join(",")).join("\r\n") + "\r\n";
 }
@@ -576,7 +806,8 @@ function summaryFor(y){
     "</style></head><body><h1>Business mileage summary, " + y + '</h1><p class="s">Prepared ' + fmtDay(localDate()) + " from a log kept at the time of each shift. Mileage deduction uses the IRS standard rate in effect on each date.</p>" +
     "<h2>Totals</h2><table>" + tr("Business miles", fmtMi(t.mi)) + Object.keys(t.rates).sort().map(r => tr("Miles at " + fmtRate(Number(r)), fmtMi(t.rates[r]) + " mi = " + fmtUsd(t.rates[r] * r))).join("") +
     tr("Mileage deduction", fmtUsd(t.ded)) + tr("Tolls and parking", fmtUsd(t.fees)) + tr("<b>Mileage plus tolls and parking</b>", "<b>" + fmtUsd(t.ded + t.fees) + "</b>") + tr("Earnings entered", fmtUsd(t.earn)) + tr("Shifts logged", t.list.length) + "</table>" +
-    "<h2>By service</h2><table>" + th("Service", "Shifts", "Miles", "Deduction", "Earnings") + Object.keys(t.by).sort((a, b) => t.by[b].mi - t.by[a].mi).map(id => tr(esc(svcName(id)), t.by[id].n, fmtMi(t.by[id].mi), fmtUsd(t.by[id].ded), fmtUsd(t.by[id].earn))).join("") + "</table>" +
+    "<h2>By service</h2><table>" + th("Service", "Shifts", "Miles", "Deduction", "Earnings", "Per mile", "Per hour") + Object.keys(t.by).sort((a, b) => t.by[b].mi - t.by[a].mi).map(id => { const b = t.by[id];
+      return tr(esc(svcName(id)), b.n, fmtMi(b.mi), fmtUsd(b.ded), fmtUsd(b.earn), b.pmi ? fmtUsd(b.pearn / b.pmi) : "", b.hr ? fmtUsd(b.hEarn / b.hr) : ""); }).join("") + "</table>" +
     "<h2>By estimated-tax period</h2><table>" + th("Period", "Miles", "Mileage deduction", "Tolls and parking", "Earnings") + PERIODS.map((p, i) => tr(p[0], fmtMi(t.periods[i].mi), fmtUsd(t.periods[i].ded), fmtUsd(t.periods[i].fees), fmtUsd(t.periods[i].earn))).join("") + "</table>" +
     (veh ? "<h2>Vehicles</h2><table>" + th("Vehicle", "Odometer Jan 1", "Odometer Dec 31", "Total miles", "Business miles", "Business share") + veh + "</table>" : "") +
     '<h2>Shift log</h2><div class="wide"><table>' + th("Date", "Odometer", "Miles", "Deduction") + sorted(y).map(s => { const x = tot(s);
@@ -593,9 +824,24 @@ function syncHomeField(){ const el = $("#f-homemi"); if (el && S.meta.commute !=
 
 document.addEventListener("click", async e => {
   const tab = e.target.closest("nav button");
-  if (tab){ ui.tab = tab.dataset.tab; ui.form = null; ui.confirm = null; ui.discard = false; ui.note = {}; render(); return; }
+  if (tab){
+    ui.tab = tab.dataset.tab; ui.form = null; ui.confirm = null; ui.discard = false; ui.note = {}; ui.help = false; ui.prefill = null;
+    if (!S.meta.seenHelp){ S.meta.seenHelp = true; commit(); }
+    render(); return;
+  }
   const b = e.target.closest("[data-act]"); if (!b) return;
   const act = b.dataset.act, id = b.dataset.id, m = S.meta;
+  if (act === "help-done"){ ui.help = false; if (!m.seenHelp){ m.seenHelp = true; commit(); } render(); window.scrollTo(0, 0); return; }
+  if (act === "help-open"){ ui.help = true; render(); window.scrollTo(0, 0); return; }
+  if (act === "photo-close"){ document.querySelectorAll(".viewer").forEach(v => v.remove()); return; }
+  if (act === "photo-view-pending"){ showPhoto(ui.photo[b.dataset.k]); return; }
+  if (act === "photo-view"){ const pid = b.dataset.photo; try { showPhoto(photoCache[pid] || await photoGet(pid)); } catch(err){} return; }
+  if (act === "photo-drop"){ delete ui.photo[b.dataset.k]; repaintPhoto(b.dataset.k); return; }
+  if (act === "copy-link"){
+    try { await navigator.clipboard.writeText(b.dataset.url); note("links", "Copied. Paste it into the URL action in Shortcuts."); }
+    catch(err){ note("links", "Copying was blocked here. Press and hold the link text to copy it."); }
+    return;
+  }
   if (act === "chip"){ b.setAttribute("aria-pressed", String(b.getAttribute("aria-pressed") !== "true")); return; }
   if (act === "pick-place"){ const el = $("#" + b.dataset.target); if (el){ el.value = b.dataset.name; syncHomeField(); } return; }
   if (act === "new"){ ui.tab = "log"; ui.form = {id:null}; render(); window.scrollTo(0, 0); return; }
@@ -603,12 +849,12 @@ document.addEventListener("click", async e => {
   if (act === "cancel-form"){ ui.form = null; render(); return; }
   if (act === "del"){ ui.confirm = id; render(); return; }
   if (act === "del-no"){ ui.confirm = null; render(); return; }
-  if (act === "del-yes"){ S.shifts = S.shifts.filter(x => x.id !== id); ui.confirm = null; commit(); render(); return; }
+  if (act === "del-yes"){ const gone = S.shifts.find(x => x.id === id); if (gone) dropPhotos(gone.photo0, gone.photo1); S.shifts = S.shifts.filter(x => x.id !== id); ui.confirm = null; commit(); render(); return; }
   if (act === "reopen"){ reopen(id); ui.tab = "shift"; ui.form = null; ui.confirm = null; ui.discard = false; render(); window.scrollTo(0, 0); return; }
-  if (act === "unreopen"){ if (m.active && m.active.orig){ S.shifts.push(m.active.orig); m.active = null; } ui.discard = false; commit(); render(); return; }
+  if (act === "unreopen"){ if (m.active && m.active.orig){ S.shifts.push(m.active.orig); m.active = null; } ui.discard = false; ui.photo = {}; commit(); render(); return; }
   if (act === "discard"){ ui.discard = true; render(); return; }
   if (act === "discard-no"){ ui.discard = false; render(); return; }
-  if (act === "discard-yes"){ m.active = null; ui.discard = false; commit(); render(); return; }
+  if (act === "discard-yes"){ if (m.active) dropPhotos(m.active.photo0, m.active.orig && m.active.orig.photo1); ui.photo = {}; ui.prefill = null; m.active = null; ui.discard = false; commit(); render(); return; }
   if (act === "svc-del"){
     const used = S.shifts.some(s => s.services.includes(id)) || (m.active && m.active.services.includes(id));
     if (used) m.services.find(s => s.id === id).gone = true; else m.services = m.services.filter(s => s.id !== id);
@@ -657,18 +903,24 @@ document.addEventListener("click", async e => {
   if (act === "place-route" || act === "routes-all"){
     const list = act === "routes-all" ? m.places.filter(p => typeof p.lat === "number") : m.places.filter(p => p.id === id);
     note("place", "Looking up driving miles.");
-    let done = 0;
-    for (const p of list){ try { if (await routePlace(p)) done++; } catch(err){} }
-    commit(); ui.note.place = done === list.length ? "Driving miles updated." : "The route lookup did not answer for " + (list.length - done) + " of " + list.length + ". Try again, or type the miles in."; again();
+    let est = 0, fail = 0;
+    for (const p of list){ const res = await routePlace(p); if (res === "est") est++; else if (res === "fail") fail++; }
+    commit();
+    ui.note.place = !est && !fail ? "Driving miles updated." : "The route lookup did not answer for " + (est + fail) + " of " + list.length + "." +
+      (est ? " Straight-line estimates are filled in and marked. Check them, or try again later." : "") + (fail ? " Miles you already had were kept." : "");
+    again();
     return;
   }
   if (act === "backup"){
-    try { await saveFile("shift-miles-backup-" + localDate() + ".json", JSON.stringify({app:"shift-miles", v:2, S}), "application/json"); m.lastBackup = localDate(); commit(); render(); }
+    if (!ui.allPhotos){ try { ui.allPhotos = await photoAll(); } catch(err){} }
+    const all = ui.allPhotos || {}, photos = {};
+    for (const pid of usedPhotoIds()) if (all[pid] || photoCache[pid]) photos[pid] = all[pid] || photoCache[pid];
+    try { await saveFile("shift-miles-backup-" + localDate() + ".json", JSON.stringify({app:"shift-miles", v:2, S, photos}), "application/json"); m.lastBackup = localDate(); commit(); render(); }
     catch(err){ note("backup", err && err.name === "AbortError" ? "Backup cancelled." : "The backup did not save. Open the app in Safari and try again."); }
     return;
   }
-  if (act === "restore-no"){ ui.restore = null; render(); return; }
-  if (act === "restore-yes"){ S = ui.restore; ui.restore = null; commit(); render(); return; }
+  if (act === "restore-no"){ ui.restore = null; ui.restorePhotos = null; render(); return; }
+  if (act === "restore-yes"){ const ph = ui.restorePhotos || {}; S = ui.restore; ui.restore = null; ui.restorePhotos = null; ui.prefill = null; commit(); render(); photoReplace(ph); return; }
   if (act === "csv" || act === "copy" || act === "summary"){
     if (!totals(ui.year).list.length) return note("export", "There are no shifts in " + ui.year + " to export.");
     try {
@@ -688,8 +940,8 @@ document.addEventListener("submit", async e => {
     if (!(odo >= 0)) return setErr("#start-err", "Enter your odometer reading as a number, such as 48210.4.");
     if (last != null && odo < last && ui.gapOk !== odo){ ui.gapOk = odo; return setErr("#start-err", "That is below your last end reading of " + last + " for this vehicle. Check the number, or tap Start shift again to use it."); }
     const hb = $("#start-home"), st0 = Date.now();
-    m.vehicle = veh; ui.gapOk = null;
-    m.active = {start: st0, odo, services: svcs, veh, home: !!(hb && hb.checked), loc0: null, place0: val("#start-place")};
+    m.vehicle = veh; ui.gapOk = null; ui.prefill = null;
+    m.active = {start: st0, odo, services: svcs, veh, home: !!(hb && hb.checked), loc0: null, place0: val("#start-place"), photo0: storePhoto("start")};
     commit(); render();
     stampLocation(loc => {
       const a = S.meta.active; if (!a || a.start !== st0) return;
@@ -704,10 +956,13 @@ document.addEventListener("submit", async e => {
     const earn = optNum("#end-earn", "#end-err", "earnings"), fees = optNum("#end-fees", "#end-err", "tolls and parking");
     if (earn === null || fees === null) return;
     const st = new Date(a.start), date = o ? o.date : localDate(st), sid = o ? o.id : newId(), p1 = val("#end-place");
+    const ph1 = storePhoto("end"); if (ph1 && o && o.photo1) dropPhotos(o.photo1);
+    ui.prefill = null;
     S.shifts.push({id: sid, date, startMs: a.start, t0: o ? o.t0 : hhmm(st), t1: hhmm(), veh: a.veh || m.vehicles[0].id, odo0: a.odo, odo1, miles: r1(odo1 - a.odo),
       homeAuto: !!a.home, homeMode: o && o.homeMiles > 0 ? o.homeMode || "add" : (m.commute === "sub" ? "sub" : "add"),
       homeMiles: a.home ? commuteFor(a.place0, p1) : (o ? o.homeMiles || 0 : 0),
-      services: a.services, earn, fees, note: val("#end-note"), place0: a.place0 || "", place1: p1, loc0: a.loc0 || null, loc1: null});
+      services: a.services, earn, fees, note: val("#end-note"), place0: a.place0 || "", place1: p1, loc0: a.loc0 || null, loc1: null,
+      photo0: a.photo0 || null, photo1: ph1 || (o ? o.photo1 || null : null)});
     m.lastOdo[a.veh || m.vehicles[0].id] = odo1; m.active = null;
     commit(); render();
     stampLocation(loc => {
@@ -736,7 +991,8 @@ document.addEventListener("submit", async e => {
     const veh = val("#f-veh") || (old ? vehOf(old) : m.vehicle);
     const rec = {id: old ? old.id : newId(), date, t0: old ? old.t0 || null : null, t1: old ? old.t1 || null : null, veh, odo0, odo1, miles,
       homeAuto: false, homeMode: old && old.homeMiles > 0 ? old.homeMode || "add" : (m.commute === "sub" ? "sub" : "add"), homeMiles: r1(home),
-      services: svcs, earn, fees, note: val("#f-note"), place0: val("#f-place0"), place1: val("#f-place1"), loc0: old ? old.loc0 || null : null, loc1: old ? old.loc1 || null : null};
+      services: svcs, earn, fees, note: val("#f-note"), place0: val("#f-place0"), place1: val("#f-place1"), loc0: old ? old.loc0 || null : null, loc1: old ? old.loc1 || null : null,
+      photo0: old ? old.photo0 || null : null, photo1: old ? old.photo1 || null : null};
     if (old) S.shifts = S.shifts.map(x => x.id === old.id ? rec : x); else S.shifts.push(rec);
     if (odo1 != null && (m.lastOdo[veh] == null || odo1 > m.lastOdo[veh])) m.lastOdo[veh] = odo1;
     ui.form = null; commit(); render();
@@ -762,17 +1018,14 @@ document.addEventListener("submit", async e => {
       catch(err){ text = "Added " + name + " without a map pin, because the address " + (err.message === "notfound" ? "was not found." : "lookup did not answer."); }
     }
     m.places.push(p); commit();
-    try { if (await routePlace(p)) commit(); } catch(err){ text += " The route lookup did not answer, so type the miles from home."; }
+    const res = await routePlace(p); if (res) commit();
+    if (res === "est") text += " The route lookup did not answer, so the miles from home are a straight-line estimate. Check them below.";
     ui.note.place = text; again();
   }
 });
 
 document.addEventListener("input", e => {
-  if (e.target.id === "end-odo"){
-    const a = S.meta.active, v = parseFloat(e.target.value), el = $("#live-miles");
-    if (!(v >= a.odo)) el.textContent = e.target.value.trim() ? "That is below your start reading" : "Enter the reading to see miles driven";
-    else { const mi = r1(v - a.odo); el.textContent = fmtMi(mi) + " miles driven · " + fmtUsd(mi * rateFor(localDate(new Date(a.start)))) + " deduction"; }
-  }
+  if (e.target.id === "end-odo" && S.meta.active) $("#live-miles").textContent = liveText(e.target.value);
 });
 
 document.addEventListener("change", e => {
@@ -784,6 +1037,12 @@ document.addEventListener("change", e => {
   else if (t.id === "start-veh"){ m.vehicle = t.value; commit(); const el = $("#start-odo"); if (el) el.value = m.lastOdo[t.value] ?? ""; }
   else if (t.id === "commute"){ m.commute = t.value; commit(); }
   else if (t.id === "gps-on"){ m.gps = t.checked; commit(); }
+  else if (t.id === "photo-on"){ m.photoOn = t.checked; commit(); }
+  else if (t.dataset && t.dataset.photoK){
+    const k = t.dataset.photoK, file = t.files && t.files[0]; if (!file) return;
+    note("photo-" + k, "Saving the photo.");
+    shrinkPhoto(file).then(d => { ui.photo[k] = d; repaintPhoto(k); }).catch(() => note("photo-" + k, "That photo could not be read. Try again."));
+  }
   else if (cls("veh-name")){ const v = m.vehicles.find(x => x.id === t.dataset.id), name = t.value.trim(); if (v && name){ v.name = name; commit(); } else if (v) t.value = v.name; }
   else if (cls("pl-name")){
     const p = m.places.find(x => x.id === t.dataset.id), name = t.value.trim(); if (!p) return;
@@ -792,14 +1051,14 @@ document.addEventListener("change", e => {
     S.shifts.forEach(s => { if (s.place0 === p.name) s.place0 = name; if (s.place1 === p.name) s.place1 = name; });
     p.name = name; commit();
   }
-  else if (cls("pl-mi")){ const p = m.places.find(x => x.id === t.dataset.id), v = parseFloat(t.value); if (p){ p.homeMi = v > 0 ? r1(v) : null; commit(); } }
+  else if (cls("pl-mi")){ const p = m.places.find(x => x.id === t.dataset.id), v = parseFloat(t.value); if (p){ p.homeMi = v > 0 ? r1(v) : null; delete p.homeEst; commit(); render(); } }
   else if (t.id === "restore"){
     const file = t.files && t.files[0]; if (!file) return;
     file.text().then(txt => {
       const raw = JSON.parse(txt);
       if (!raw || raw.app !== "shift-miles" || !raw.S || !Array.isArray(raw.S.shifts)) throw new Error("format");
-      const next = {meta: fixMeta(raw.S.meta), shifts: raw.S.shifts};
-      if (S.shifts.length){ ui.restore = next; render(); } else { S = next; commit(); render(); }
+      const next = {meta: fixMeta(raw.S.meta), shifts: raw.S.shifts}, photos = cleanPhotos(raw.photos);
+      if (S.shifts.length){ ui.restore = next; ui.restorePhotos = photos; render(); } else { S = next; commit(); render(); photoReplace(photos); }
     }).catch(() => note("backup", "That file is not a Shift Miles backup."));
   }
   else if (t.id === "yr-o0" || t.id === "yr-o1"){
@@ -812,6 +1071,8 @@ document.addEventListener("change", e => {
 
 /* ---------- start ---------- */
 loadLocal();
+if (!S.meta.seenHelp){ if (S.shifts.length || S.meta.active){ S.meta.seenHelp = true; saveLocal(); } else ui.help = true; }
+readLink();
 render();
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
